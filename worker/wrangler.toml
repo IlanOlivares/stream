@@ -1,0 +1,7 @@
+name = "abundant-stream"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# Runs every 5 minutes on Cloudflare (free plan).
+[triggers]
+crons = ["*/5 * * * *"]
