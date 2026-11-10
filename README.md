@@ -22,5 +22,6 @@ No stream keys or passwords are stored here.
 2. **Connection checks**: whether Companion is connected to the ATEM, OBS and the Spanish OBS.
 3. **Heartbeat**: a quiet "Companion is alive" status every 15 minutes between services, so the page shows when the church Mac or Companion is down.
 4. **Bitrate chart**: OBS bitrate over the service, from the once-a-minute updates.
+5. **Watchdog: alert once per outage** instead of every 30 seconds while the ATEM stream is down (Companion change).
 
 Not planned: viewer counts and Restream channel states (would require API keys on a public page).
