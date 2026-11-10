@@ -18,9 +18,10 @@ No stream keys or passwords are stored here.
 
 ## Pending (after Wednesday Nov 11, 2026)
 
-1. **OBS health** in the status message: CPU use, skipped frames, free recording disk space, with warnings on the page.
+1. ~~**OBS health**~~ Done Nov 10: Equipment tiles show OBS uptime, CPU, RAM, fps, disk and skipped frames, plus a "restart suggested" flag.
 2. **Connection checks**: whether Companion is connected to the ATEM, OBS and the Spanish OBS.
-3. **Heartbeat**: a quiet "Companion is alive" status every 15 minutes between services, so the page shows when the church Mac or Companion is down.
+3. ~~**Heartbeat**~~ Done Nov 10: status posts every 15 minutes (trigger "Status heartbeat"), and immediately when OBS connects or drops.
+- **HyperDeck tile**: connection added in Companion but switched off; waiting on whether anything else controls the HyperDeck over the network.
 4. **Bitrate chart**: OBS bitrate over the service, from the once-a-minute updates.
 5. **Watchdog: alert once per outage** instead of every 30 seconds while the ATEM stream is down (Companion change).
 
