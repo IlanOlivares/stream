@@ -201,7 +201,9 @@ export default {
     const min = new Date(event.scheduledTime || Date.now()).getUTCMinutes();
     const jobs = [];
     if (env.STATE && env.RESTREAM_CLIENT_ID) jobs.push(refreshIfNeeded(env));
-    if (min % 5 === 0) jobs.push(checkHeartbeat(false));
+    if (min % 5 === 0) jobs.push(checkHeartbeat(false).then(
+      r => env.STATE && env.STATE.put('hb_last', JSON.stringify({ at: new Date().toISOString(), ok: true, action: r.action })),
+      e => env.STATE && env.STATE.put('hb_last', JSON.stringify({ at: new Date().toISOString(), ok: false, error: String(e && e.message || e) }))));
     ctx.waitUntil(Promise.allSettled(jobs));
   },
   // Visiting the worker's URL shows the current check without sending anything.
@@ -217,7 +219,9 @@ export default {
       // Three quick reads from ntfy to see whether Cloudflare can reach it reliably.
       const out = [];
       for (let i = 0; i < 3; i++) { const t0 = Date.now(); try { const r = await fetch(NTFY + STATUS_TOPIC + '/json?poll=1&since=5m', { headers: NTFY_AUTH ? { authorization: 'Bearer ' + NTFY_AUTH } : {}, signal: AbortSignal.timeout(8000) }); out.push(r.status + ' in ' + (Date.now() - t0) + ' ms'); } catch (e) { out.push(e.name + ' after ' + (Date.now() - t0) + ' ms'); } }
-      return Response.json({ token: !!NTFY_AUTH, reads: out });
+      const posts = [];
+      for (let i = 0; i < 2; i++) { const t0 = Date.now(); try { const r = await fetch(NTFY + 'abundant-debug-x7q2', { method: 'POST', body: 'check', headers: NTFY_AUTH ? { authorization: 'Bearer ' + NTFY_AUTH } : {}, signal: AbortSignal.timeout(4000) }); posts.push(r.status + ' in ' + (Date.now() - t0) + ' ms ' + (r.status >= 400 ? (await r.text()).slice(0, 120) : '')); } catch (e) { posts.push(e.name + ' after ' + (Date.now() - t0) + ' ms'); } }
+      return Response.json({ token: !!NTFY_AUTH, reads: out, posts, lastScheduledCheck: env.STATE ? JSON.parse(await env.STATE.get('hb_last') || 'null') : null });
     }
     try { return Response.json(await checkHeartbeat(true)); }
     catch (e) { return Response.json({ error: String(e) }, { status: 502 }); }
