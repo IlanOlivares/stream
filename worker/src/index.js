@@ -9,9 +9,21 @@ const ALERT_TOPIC = 'abundant-stream-k7x2q9';
 const SILENT_MIN = 20;
 const TZ = 'America/Denver';
 
+// ntfy occasionally times out (522) on the first try from Cloudflare; retry quickly.
+async function ntfyFetch(url, opts) {
+  let last;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(8000) });
+      if (res.ok) return res;
+      last = new Error(`ntfy ${res.status}`);
+    } catch (e) { last = e; }
+  }
+  throw last;
+}
+
 async function poll(topic) {
-  const res = await fetch(`${NTFY}${topic}/json?poll=1&since=12h`);
-  if (!res.ok) throw new Error(`ntfy ${topic} ${res.status}`);
+  const res = await ntfyFetch(`${NTFY}${topic}/json?poll=1&since=12h`);
   return (await res.text()).split('\n').filter(Boolean)
     .map(l => { try { return JSON.parse(l); } catch { return null; } })
     .filter(m => m && m.event === 'message');
@@ -22,7 +34,7 @@ function clock(ts) {
 }
 
 async function notify(message, tags) {
-  await fetch(NTFY + ALERT_TOPIC, { method: 'POST', body: message, headers: { Tags: tags } });
+  await ntfyFetch(NTFY + ALERT_TOPIC, { method: 'POST', body: message, headers: { Tags: tags } });
 }
 
 async function checkHeartbeat(dryRun) {
