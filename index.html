@@ -526,9 +526,10 @@
     rs.channels.forEach(function (c) {
       var d = document.createElement('div'); d.className = 'tile' + (c.enabled ? ' on' : '');
       d.innerHTML = '<div class="lbl"></div><div class="state"></div><div class="sub"></div>';
-      d.querySelector('.lbl').textContent = c.platform;
+      var custom = /custom/i.test(c.platform), plat = c.platform.replace(/^Youtube$/, 'YouTube');
+      d.querySelector('.lbl').textContent = custom ? c.name : plat;
       d.querySelector('.state').textContent = c.enabled ? 'ON' : 'OFF';
-      d.querySelector('.sub').textContent = c.name;
+      d.querySelector('.sub').textContent = custom ? 'Custom RTMP' : c.name;
       box.appendChild(d);
     });
   }
