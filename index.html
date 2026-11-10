@@ -62,6 +62,12 @@
   body.live-mode .tile { padding: 16px; } body.live-mode .tile .state { font-size: 1.4rem; }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 10px; font-size: .78rem; color: var(--muted); }
   .tiles.eq { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 8px; }
+  .chart { position: relative; margin-top: 8px; }
+  .chart svg { display: block; width: 100%; height: auto; }
+  .chart .tip { position: absolute; pointer-events: none; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; font: .78rem var(--mono); white-space: nowrap; display: none; z-index: 2; }
+  .chart .legend2 { display: flex; gap: 14px; font-size: .8rem; color: var(--muted); }
+  .chart .legend2 i { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 6px; border-radius: 2px; }
+  .chart .empty { font-size: .85rem; color: var(--muted); padding: 10px 0 4px; }
   .tiles.rs { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin-top: 8px; }
   .eq-head { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-top: 16px; }
   .tile .meta { font: .78rem var(--mono); color: var(--muted); margin-top: 6px; line-height: 1.5; }
@@ -150,6 +156,8 @@
       <div class="tile" id="t-rec"><div class="lbl">OBS recording</div><div class="state">—</div><div class="sub"></div></div>
       <div class="tile" id="t-sp"><div class="lbl">Spanish</div><div class="state">—</div><div class="sub"></div></div>
     </div>
+    <div class="eq-head">Upload rate <span class="dim" id="br-note" style="text-transform:none;letter-spacing:0"></span></div>
+    <div class="chart" id="br-chart"><div class="empty">Shows during services: OBS and ATEM upload rate, one point a minute.</div></div>
     <div class="eq-head">Equipment</div>
     <div class="tiles eq">
       <div class="tile" id="t-obsapp"><div class="lbl">OBS app (church Mac)</div><div class="state">—</div><div class="sub"></div><div class="meta"></div></div>
@@ -298,17 +306,21 @@
     fr.className = 'fresh' + (stale ? ' stale' : '');
     document.body.classList.toggle('live-mode', !!(live || win));
 
-    if (!s) { ['t-atem','t-obs','t-rec','t-sp'].forEach(function (id) { setTile(id, '', '—', 'Reports only during services'); }); return; }
+    if (!s) { ['t-atem','t-obs','t-rec','t-sp'].forEach(function (id) { setTile(id, '', '—', 'Waiting for first report'); }); return; }
     var check = live && !stale;
     var spExpected = win ? win.spanish : false;
     var atemOn = s.atem_stream === true || s.atem_stream === 'true';
-    setTile('t-atem', atemOn ? 'on' : (check ? 'bad' : ''), atemOn ? 'LIVE' : 'OFF', atemOn ? s.atem_time : (check ? 'Should be on' : 'Not needed now'));
+    var cache = parseFloat(s.atem_cache) || 0;
+    if (s.atem_conn && s.atem_conn !== 'good') setTile('t-atem', 'bad', 'NOT CONNECTED', 'Companion can\'t reach the ATEM');
+    else setTile('t-atem', atemOn ? (cache > 10 ? 'bad' : 'on') : (check ? 'bad' : ''), atemOn ? 'LIVE' : 'OFF', atemOn ? s.atem_time + (cache > 10 ? ' · buffer ' + Math.round(cache) + '%: internet not keeping up' : '') : (check ? 'Should be on' : 'Not needed now'));
     var obsOn = s.obs_stream && s.obs_stream !== 'Off-Air';
-    setTile('t-obs', obsOn ? 'on' : (check ? 'bad' : ''), obsOn ? 'LIVE' : 'OFF', obsOn ? s.obs_time + ' · ' + s.kbps + ' kbps' : (check ? 'Should be on' : 'Not needed now'));
+    if (s.obs_conn && s.obs_conn !== 'good') setTile('t-obs', 'bad', 'NOT CONNECTED', 'Companion can\'t reach OBS');
+    else setTile('t-obs', obsOn ? 'on' : (check ? 'bad' : ''), obsOn ? 'LIVE' : 'OFF', obsOn ? s.obs_time + ' · ' + s.kbps + ' kbps' : (check ? 'Should be on' : 'Not needed now'));
     var recOn = s.obs_rec && s.obs_rec !== 'Stopped';
     setTile('t-rec', recOn ? 'rec' : (check ? 'bad' : ''), recOn ? 'REC' : 'STOPPED', recOn ? s.obs_rec_time : (check ? 'Should be recording' : 'Not needed now'));
     var spOn = s.spanish && s.spanish !== 'Off-Air';
-    setTile('t-sp', spOn ? 'on' : (check && spExpected ? 'bad' : ''), spOn ? 'LIVE' : 'OFF', spOn ? s.spanish_time : (check && spExpected ? 'Should be on' : (live ? 'No Spanish this service' : 'Not needed now')));
+    if (s.sp_conn && s.sp_conn !== 'good') setTile('t-sp', check && spExpected ? 'bad' : '', check && spExpected ? 'NOT CONNECTED' : 'MAC OFF', check && spExpected ? 'Companion can\'t reach the Spanish Mac' : 'Spanish Mac not connected (fine outside services)');
+    else setTile('t-sp', spOn ? 'on' : (check && spExpected ? 'bad' : ''), spOn ? 'LIVE' : 'OFF', spOn ? s.spanish_time : (check && spExpected ? 'Should be on' : (live ? 'No Spanish this service' : 'Not needed now')));
   }
 
   // Equipment tiles. Thresholds for "restart suggested" are rules of thumb, not hard limits.
@@ -366,6 +378,51 @@
     } else {
       setTile('t-hd', '', '—', 'Waiting for first report'); setMeta('t-hd', '');
     }
+  }
+
+  // Upload-rate chart: last 150 minutes of points where an encoder was streaming. One axis (Mbps).
+  var C_OBS = '#3987e5', C_ATEM = '#d95926';
+  function renderChart() {
+    var box = $('br-chart'), now = Date.now() / 1000;
+    var pts = hist.filter(function (p) { return p.t > now - 150 * 60 && (p.obs !== null || p.atem !== null); });
+    var note = $('br-note');
+    if (pts.length < 2) { box.innerHTML = '<div class="empty">Shows during services: OBS and ATEM upload rate, one point a minute.</div>'; note.textContent = ''; return; }
+    var W = Math.max(300, box.clientWidth || 600), H = 170, L = 30, R = 64, T = 10, B = 22;
+    var t0 = pts[0].t, t1 = Math.max(pts[pts.length - 1].t, t0 + 600);
+    var max = 0; pts.forEach(function (p) { max = Math.max(max, p.obs || 0, p.atem || 0); });
+    var top = Math.max(8, Math.ceil(max * 1.2 / 2) * 2), step = top <= 10 ? 2 : (top <= 20 ? 5 : 10);
+    var x = function (t) { return L + (t - t0) / (t1 - t0) * (W - L - R); }, y = function (v) { return T + (1 - v / top) * (H - T - B); };
+    var g = '';
+    for (var v = 0; v <= top; v += step) g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(--line)" stroke-width="1"/><text x="' + (L - 6) + '" y="' + (y(v) + 4) + '" text-anchor="end" fill="var(--muted)" font-size="10">' + v + '</text>';
+    var clock = function (t) { return new Date(t * 1000).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }); };
+    g += '<text x="' + L + '" y="' + (H - 6) + '" fill="var(--muted)" font-size="10">' + clock(t0) + '</text><text x="' + (W - R) + '" y="' + (H - 6) + '" text-anchor="end" fill="var(--muted)" font-size="10">' + clock(t1) + '</text>';
+    function line(key, col, label) {
+      var d = '', pen = false, lastP = null;
+      pts.forEach(function (p, i) {
+        var gap = i > 0 && p.t - pts[i - 1].t > 180;
+        if (p[key] === null || gap) pen = false;
+        if (p[key] !== null) { d += (pen ? 'L' : 'M') + x(p.t).toFixed(1) + ' ' + y(p[key]).toFixed(1); pen = true; lastP = p; }
+      });
+      if (!d) return '';
+      return '<path d="' + d + '" fill="none" stroke="' + col + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' +
+        '<text x="' + (x(lastP.t) + 6) + '" y="' + (y(lastP[key]) + 4) + '" fill="var(--fg)" font-size="10">' + label + ' ' + lastP[key].toFixed(1) + '</text>';
+    }
+    g += line('atem', C_ATEM, 'ATEM') + line('obs', C_OBS, 'OBS');
+    g += '<line id="br-x" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--muted)" stroke-width="1" visibility="hidden"/><rect id="br-hit" x="' + L + '" y="0" width="' + (W - L - R) + '" height="' + H + '" fill="transparent"/>';
+    box.innerHTML = '<div class="legend2"><span><i style="background:' + C_ATEM + '"></i>ATEM (primary)</span><span><i style="background:' + C_OBS + '"></i>OBS (backup)</span><span style="margin-left:auto">Mbps</span></div>' +
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Upload rate of the ATEM and OBS streams over the last two and a half hours">' + g + '</svg><div class="tip"></div>';
+    var last = pts[pts.length - 1];
+    note.textContent = last.cache > 10 ? '· ⚠️ ATEM buffer ' + Math.round(last.cache) + '% (internet not keeping up)' : '';
+    var svg = box.querySelector('svg'), tip = box.querySelector('.tip'), xl = svg.querySelector('#br-x');
+    svg.querySelector('#br-hit').addEventListener('mousemove', function (ev) {
+      var r = svg.getBoundingClientRect(), vx = (ev.clientX - r.left) / r.width * W, best = pts[0];
+      pts.forEach(function (p) { if (Math.abs(x(p.t) - vx) < Math.abs(x(best.t) - vx)) best = p; });
+      xl.setAttribute('x1', x(best.t)); xl.setAttribute('x2', x(best.t)); xl.setAttribute('visibility', 'visible');
+      tip.textContent = clock(best.t) + '  ATEM ' + (best.atem === null ? 'off' : best.atem.toFixed(1)) + '  OBS ' + (best.obs === null ? 'off' : best.obs.toFixed(1)) + ' Mbps' + (best.cache > 0 ? '  buffer ' + Math.round(best.cache) + '%' : '');
+      tip.style.display = 'block';
+      var px = x(best.t) / W * r.width; tip.style.left = Math.min(Math.max(0, px - tip.offsetWidth / 2), r.width - tip.offsetWidth) + 'px'; tip.style.top = '18px';
+    });
+    svg.querySelector('#br-hit').addEventListener('mouseleave', function () { tip.style.display = 'none'; xl.setAttribute('visibility', 'hidden'); });
   }
 
   function renderNow() {
@@ -488,7 +545,17 @@
     if (prep.updated) text('prep-note', 'Updated ' + new Date(prep.updated).toLocaleString('en-US', { timeZone: TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + '.');
   }
 
+  var hist = [], histIds = {};
+  function addHist(msg, j) {
+    if (histIds[msg.id]) return; histIds[msg.id] = 1;
+    var obsOn = j.obs_stream && j.obs_stream !== 'Off-Air', atemOn = j.atem_stream === true || j.atem_stream === 'true';
+    var k = parseFloat(j.kbps), a = parseFloat(j.atem_mbps);
+    hist.push({ t: msg.time, obs: obsOn && !isNaN(k) ? k / 1000 : null, atem: atemOn && !isNaN(a) ? a * 8 : null, cache: parseFloat(j.atem_cache) });
+    hist.sort(function (x, y) { return x.t - y.t; });
+    if (hist.length > 900) hist.shift();
+  }
   function handleStatus(msg) {
+    try { addHist(msg, JSON.parse(msg.message)); renderChart(); } catch (e) {}
     if (msg.time < lastStatusTime) return;
     try { lastStatus = JSON.parse(msg.message); lastStatusTime = msg.time; } catch (e) { return; }
     renderStatus(); renderNow();
@@ -541,6 +608,8 @@
   function tick() { renderStatus(); renderEquipment(); renderRestream(); renderNow(); renderNext(); renderRun(); }
   tick(); renderFeed(); loadPrep();
   load(STATUS_TOPIC, handleStatus);
+  setInterval(renderChart, 60000);
+  var rzT; window.addEventListener('resize', function () { clearTimeout(rzT); rzT = setTimeout(renderChart, 200); });
   load(ALERT_TOPIC, handleAlert);
   loadRestream(); setInterval(loadRestream, 60000);
   setInterval(tick, 1000);

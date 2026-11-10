@@ -19,15 +19,14 @@ No stream keys or passwords are stored here.
 ## Pending (after Wednesday Nov 11, 2026)
 
 1. ~~**OBS health**~~ Done Nov 10: Equipment tiles show OBS uptime, CPU, RAM, fps, disk and skipped frames, plus a "restart suggested" flag.
-2. **Connection checks**: whether Companion is connected to the ATEM, OBS and the Spanish OBS.
+2. ~~**Connection checks**~~ Done Nov 10: ATEM, OBS and Spanish tiles show NOT CONNECTED / MAC OFF.
 3. ~~**Heartbeat**~~ Done Nov 10: status posts every 15 minutes (trigger "Status heartbeat"), and immediately when OBS connects or drops.
 - ~~**HyperDeck tile**~~ Done Nov 10: Companion reads the HyperDeck Studio 4K Pro (172.16.1.184, status only, no control); tile shows SSD, recording state and time left.
-4. **Bitrate chart**: OBS bitrate over the service, from the once-a-minute updates.
+4. ~~**Bitrate chart**~~ Done Nov 10: ATEM + OBS upload rate (Mbps, last 150 min) with ATEM buffer warning. Verify on Wednesday that the ATEM's "MB/s" value really is megabytes (chart multiplies by 8).
 - ~~**Agreed Nov 10 Companion changes**~~ Done Nov 10 (moved up from Thursday): Watchdog now alerts once per outage (after ~1 min) for ATEM and for OBS (disconnected or not recording), with recovery messages (tested); Wed Wrap-up treats a powered-off Spanish Mac as stopped; Space check at each Health Check time; HyperDeck recording nudge 10 min in (verify its "Record" status text on Wednesday); Sun 9:00 KTSM reminder removed (worker checks at 10:35).
 - ~~**Restream destination checks**~~ Done Nov 10 in the worker (alerts need the ntfy paid plan; the free tier's shared daily quota blocks Cloudflare).
 5. ~~**Watchdog: alert once per outage**~~ Done Nov 10.
 - ~~**Cloud worker**~~ Done Nov 10: Cloudflare worker `abundant-stream` (code in `worker/`). Dead man's switch live (test with a real 25-min outage after Wednesday). Restream destination tiles live on the status page. Optional later: confirm YouTube is actually live.
-- **Bitrate chart: ATEM too**: check whether Companion's ATEM connection reports streaming bitrate and buffer; add an ATEM line and a buffer-filling warning if so.
 
 ### Cleanup (after Wednesday Nov 11, 2026)
 
