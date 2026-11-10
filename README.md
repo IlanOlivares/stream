@@ -30,10 +30,10 @@ No stream keys or passwords are stored here.
 
 ### Cleanup (after Wednesday Nov 11, 2026)
 
-6. **Delete the old claude.ai status page** ("Abundant Stream Status") once this page is confirmed working; confirm with Ilan before deleting.
+6. ~~**Delete the old claude.ai status page**~~ Done Nov 10 (Ilan confirmed).
 7. **Remove ATEM record on/off** from the 4 Go Live and 4 End triggers (no drive in the ATEM; HyperDeck handles that recording).
-8. **OBS: record with the stream encoder** ("Use stream encoder") to halve encoding load; part of the OBS settings review.
-9. **Restream Storage housekeeping**: Ilan clears old Wednesday recordings now and then (cap is 50; Claude never deletes uploads).
+8. **OBS settings review** done Nov 10. To change (Ilan, on the church Mac): Settings → Output → Recording → Video Encoder = "(Use stream encoder)" (recording is already identical: Apple VT H.264, CBR 6000). Nov 8 crash: OBS had run 2.7 days and aborted in Apple's OpenGL/Metal driver as the virtual camera started (since removed) → supports a daily clean OBS restart (item 12).
+9. **Restream Storage housekeeping**: checked Nov 10: 98% free, uploads 1/50 (Nov 4). Ilan clears old Wednesday uploads now and then; Claude never deletes uploads.
 10. **Merge status triggers**: fold "Status feed (on start/stop)" into the heartbeat trigger as an extra event (one fewer trigger).
 11. **Companion 5.1.2 update** on the church Mac.
 12. **Scheduled OBS restart** on the church Mac (the uptime tile shows how often it's needed).
