@@ -59,13 +59,94 @@ async function checkHeartbeat(dryRun) {
   return { lastStatus: last ? new Date(last * 1000).toISOString() : null, silentMinutes: silentFor === null ? null : Math.round(silentFor / 60), downAlertOpen: downSent, action, dryRun: !!dryRun };
 }
 
+
+// ---------- Restream (testing stage) ----------
+// Secrets RESTREAM_CLIENT_ID and RESTREAM_CLIENT_SECRET live in Cloudflare settings, never in this repo.
+const RS_API = 'https://api.restream.io';
+
+function html(body, status) {
+  return new Response(`<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Abundant Stream · Restream</title><body style="font:16px system-ui;max-width:640px;margin:40px auto;padding:0 16px;background:#0f1214;color:#e8ecee">${body}</body>`, { status: status || 200, headers: { 'content-type': 'text/html;charset=utf-8' } });
+}
+function callbackUrl(req) { return new URL('/restream/callback', req.url).toString(); }
+function basicAuth(env) { return 'Basic ' + btoa(env.RESTREAM_CLIENT_ID + ':' + env.RESTREAM_CLIENT_SECRET); }
+
+async function saveTokens(env, j) {
+  const t = { access: j.access_token, refresh: j.refresh_token, expires: j.expires || (Math.floor(Date.now() / 1000) + (j.expires_in || 3600)) };
+  await env.STATE.put('restream_tokens', JSON.stringify(t));
+  return t;
+}
+async function tokenRequest(env, params) {
+  const r = await fetch(RS_API + '/oauth/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: basicAuth(env) }, body: new URLSearchParams(params) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.access_token) throw new Error('Restream token request failed: ' + r.status + ' ' + JSON.stringify(j.error || j).slice(0, 200));
+  return j;
+}
+async function accessToken(env) {
+  const raw = await env.STATE.get('restream_tokens');
+  if (!raw) return null;
+  let t = JSON.parse(raw);
+  if (t.expires - 120 < Date.now() / 1000) t = await saveTokens(env, await tokenRequest(env, { grant_type: 'refresh_token', refresh_token: t.refresh }));
+  return t.access;
+}
+async function rsGet(env, path) {
+  const tok = await accessToken(env);
+  if (!tok) throw new Error('Not connected to Restream yet');
+  const r = await fetch(RS_API + path, { headers: { authorization: 'Bearer ' + tok } });
+  return { status: r.status, body: await r.json().catch(() => null) };
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]); }
+
+async function restreamRoute(req, env, path) {
+  if (!env.RESTREAM_CLIENT_ID || !env.RESTREAM_CLIENT_SECRET) return html('<h2>Not set up</h2><p>Add RESTREAM_CLIENT_ID and RESTREAM_CLIENT_SECRET in Cloudflare first.</p>', 503);
+  const url = new URL(req.url);
+  if (path === '/restream/connect') {
+    // Only allowed while not connected, so nobody else can swap in their account.
+    if (await env.STATE.get('restream_tokens') && url.searchParams.get('force') !== '1') return html('<h2>Already connected</h2><p><a style="color:#2fd27a" href="/restream/test">Run the test</a></p>');
+    const state = crypto.randomUUID();
+    await env.STATE.put('oauth_state', state, { expirationTtl: 600 });
+    const q = new URLSearchParams({ response_type: 'code', client_id: env.RESTREAM_CLIENT_ID, redirect_uri: callbackUrl(req), state });
+    return Response.redirect(RS_API + '/login?' + q, 302);
+  }
+  if (path === '/restream/callback') {
+    const code = url.searchParams.get('code'), state = url.searchParams.get('state');
+    if (!code) return html('<h2>Not connected</h2><p>Restream didn\'t send a code (the request may have been declined).</p>', 400);
+    if (!state || state !== await env.STATE.get('oauth_state')) return html('<h2>Link expired</h2><p>Start again from /restream/connect.</p>', 400);
+    await env.STATE.delete('oauth_state');
+    await saveTokens(env, await tokenRequest(env, { grant_type: 'authorization_code', redirect_uri: callbackUrl(req), code }));
+    return Response.redirect(new URL('/restream/test', req.url).toString(), 302);
+  }
+  if (path === '/restream/test') {
+    // Shows what Restream reports for each destination (names and on/off-style fields only; no keys).
+    const rows = [];
+    for (const p of ['/v2/user/channels', '/v2/user/channel/all']) {
+      const r = await rsGet(env, p);
+      const list = Array.isArray(r.body) ? r.body : (r.body && (r.body.channels || r.body.data)) || [];
+      rows.push(`<h3>${p} → HTTP ${r.status}</h3>`);
+      if (!list.length) { rows.push(`<pre>${esc(JSON.stringify(r.body).slice(0, 300))}</pre>`); continue; }
+      rows.push(`<p>Fields: <code>${esc(Object.keys(list[0]).join(', '))}</code></p><ul>`);
+      for (const c of list) {
+        const flags = Object.entries(c).filter(([k, v]) => typeof v === 'boolean' || /active|enabled|status|online/i.test(k)).map(([k, v]) => k + '=' + v).join(' · ');
+        rows.push(`<li>${esc(c.displayName || c.name || c.id)} <span style="color:#8d989e">${esc(flags || '(no on/off field)')}</span></li>`);
+      }
+      rows.push('</ul>');
+    }
+    return html('<h2>Restream test</h2>' + rows.join(''));
+  }
+  return html('<h2>Not found</h2>', 404);
+}
+
 export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(checkHeartbeat(false));
   },
   // Visiting the worker's URL shows the current check without sending anything.
-  async fetch(req) {
-    if (new URL(req.url).pathname === '/debug') {
+  async fetch(req, env) {
+    const path = new URL(req.url).pathname;
+    if (path.startsWith('/restream/')) {
+      try { return await restreamRoute(req, env, path); }
+      catch (e) { return html('<h2>Error</h2><pre>' + esc(e.message || e) + '</pre>', 502); }
+    }
+    if (path === '/debug') {
       const out = {};
       for (const u of ['https://ntfy.sh/v1/health', 'https://ntfy.sh/' + STATUS_TOPIC + '/json?poll=1&since=1h', 'https://example.com/']) {
         const t0 = Date.now();

@@ -7,3 +7,7 @@ preview_urls = false
 # Runs every 5 minutes on Cloudflare (free plan).
 [triggers]
 crons = ["*/5 * * * *"]
+
+# Small key-value store for the Restream sign-in (created automatically on deploy).
+[[kv_namespaces]]
+binding = "STATE"
