@@ -31,10 +31,10 @@ No stream keys or passwords are stored here.
 ### Cleanup (after Wednesday Nov 11, 2026)
 
 6. ~~**Delete the old claude.ai status page**~~ Done Nov 10 (Ilan confirmed).
-7. **Remove ATEM record on/off** from the 4 Go Live and 4 End triggers (no drive in the ATEM; HyperDeck handles that recording).
+7. ~~**Remove ATEM record on/off**~~ Done Nov 10 from all 4 Go Live and 4 End triggers.
 8. **OBS settings review** done Nov 10. To change (Ilan, on the church Mac): Settings → Output → Recording → Video Encoder = "(Use stream encoder)" (recording is already identical: Apple VT H.264, CBR 6000). Nov 8 crash: OBS had run 2.7 days and aborted in Apple's OpenGL/Metal driver as the virtual camera started (since removed) → supports a daily clean OBS restart (item 12).
 9. **Restream Storage housekeeping**: checked Nov 10: 98% free, uploads 1/50 (Nov 4). Ilan clears old Wednesday uploads now and then; Claude never deletes uploads.
-10. **Merge status triggers**: fold "Status feed (on start/stop)" into the heartbeat trigger as an extra event (one fewer trigger).
+10. ~~**Merge status triggers**~~ Done Nov 10: heartbeat trigger also fires when service_live changes (with a 1 s wait so it posts the new value); "on start/stop" trigger deleted.
 11. **Companion 5.1.2 update** on the church Mac.
 12. **Scheduled OBS restart** on the church Mac (the uptime tile shows how often it's needed).
 13. ~~**Docs**~~ Done Nov 10: runbook has Alerts and checks + Status page and cloud worker sections; VDO.Ninja material removed; Companion connections and trigger pattern updated. Re-touch after the remaining cleanup items.
