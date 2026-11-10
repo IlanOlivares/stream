@@ -84,9 +84,29 @@ async function tokenRequest(env, params) {
 async function accessToken(env) {
   const raw = await env.STATE.get('restream_tokens');
   if (!raw) return null;
-  let t = JSON.parse(raw);
-  if (t.expires - 120 < Date.now() / 1000) t = await saveTokens(env, await tokenRequest(env, { grant_type: 'refresh_token', refresh_token: t.refresh }));
-  return t.access;
+  return JSON.parse(raw).access;
+}
+// Only the once-a-minute schedule renews the sign-in, so two renewals can never overlap
+// (Restream cancels the old key on each renewal).
+async function refreshIfNeeded(env) {
+  const raw = await env.STATE.get('restream_tokens');
+  if (!raw) return 'not connected';
+  const t = JSON.parse(raw);
+  if (t.expires - 15 * 60 > Date.now() / 1000) return 'fresh';
+  try {
+    await saveTokens(env, await tokenRequest(env, { grant_type: 'refresh_token', refresh_token: t.refresh }));
+    if (await env.STATE.get('rs_broken')) { await env.STATE.delete('rs_broken'); await notify('🟢 Restream status is working again.', 'restream,up').catch(() => {}); }
+    return 'renewed';
+  } catch (e) {
+    if (/invalid_grant|400|401/.test(String(e.message))) {
+      await env.STATE.delete('restream_tokens');
+      if (!(await env.STATE.get('rs_broken'))) {
+        await env.STATE.put('rs_broken', '1');
+        await notify('⚠️ Restream status needs reconnecting (the sign-in expired). Open abundant-stream.proud-base-a9ba.workers.dev/restream/connect and approve. Streaming is not affected.', 'restream,down').catch(() => {});
+      }
+    }
+    return 'error: ' + e.message;
+  }
 }
 async function rsGet(env, path) {
   const tok = await accessToken(env);
@@ -133,7 +153,6 @@ async function restreamRoute(req, env, path) {
       }
       rows.push('</ul>');
     }
-    try { rows.push('<p>Status page update: ' + esc(await checkRestream(env)) + '</p>'); } catch (e) { rows.push('<pre>' + esc(e.message) + '</pre>'); }
     try { rows.push('<h3>As the status page will see it</h3><ul>' + (await readChannels(env)).map(c => `<li>${esc(c.platform)} · ${esc(c.name)}: <b>${c.enabled ? 'ON' : 'off'}</b></li>`).join('') + '</ul>'); } catch (e) { rows.push('<pre>' + esc(e.message) + '</pre>'); }
     return html('<h2>Restream test</h2>' + rows.join(''));
   }
@@ -141,20 +160,7 @@ async function restreamRoute(req, env, path) {
 }
 
 // ---------- Restream destination status ----------
-const RESTREAM_TOPIC = 'abundant-restream-jg00ai';
-// Service windows (Mountain time): check every minute inside these, every 15 minutes otherwise.
-const WINDOWS = [
-  { day: 0, from: 8 * 60, to: 14 * 60 + 30 },   // Sunday, all three services
-  { day: 3, from: 17 * 60 + 30, to: 20 * 60 + 30 }, // Wednesday
-  { day: 6, from: 16 * 60 + 30, to: 19 * 60 },  // Saturday replay
-];
-function denverNow() {
-  const p = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(new Date());
-  const g = t => p.find(x => x.type === t).value;
-  return { day: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(g('weekday')), min: (parseInt(g('hour'), 10) % 24) * 60 + parseInt(g('minute'), 10) };
-}
-function inWindow() { const n = denverNow(); return WINDOWS.some(w => w.day === n.day && n.min >= w.from && n.min < w.to); }
-
+// The status page asks GET /restream/status about once a minute. Answers are cached for 60 s.
 async function platformNames(env) {
   const cached = await env.STATE.get('rs_platforms');
   if (cached) return JSON.parse(cached);
@@ -164,66 +170,41 @@ async function platformNames(env) {
   await env.STATE.put('rs_platforms', JSON.stringify(map), { expirationTtl: 7 * 86400 });
   return map;
 }
-
 async function readChannels(env) {
   const r = await rsGet(env, '/v2/user/channel/all');
   if (r.status !== 200 || !Array.isArray(r.body)) throw new Error('Restream channel list HTTP ' + r.status);
   const names = await platformNames(env);
   return r.body.map(c => ({ name: c.displayName, platform: names[c.streamingPlatformId] || ('Platform ' + c.streamingPlatformId), enabled: !!c.enabled }));
 }
-
-async function checkRestream(env) {
-  if (!env.RESTREAM_CLIENT_ID || !env.STATE) return 'not set up';
-  if (!(await env.STATE.get('restream_tokens'))) return 'not connected';
-  const t = Math.floor(Date.now() / 1000);
-  let msg;
-  try {
-    msg = { t, ok: true, channels: await readChannels(env) };
-    if (await env.STATE.get('rs_broken')) {
-      await env.STATE.delete('rs_broken');
-      await notify('🟢 Restream status is working again.', 'restream,up');
-    }
-  } catch (e) {
-    const text = String(e.message || e);
-    msg = { t, ok: false, error: text.slice(0, 200) };
-    if (/invalid_grant|refresh/i.test(text)) {
-      // Sign-in chain broken: clear it so /restream/connect works again, and tell Ilan once.
-      await env.STATE.delete('restream_tokens');
-      if (!(await env.STATE.get('rs_broken'))) {
-        await env.STATE.put('rs_broken', '1');
-        await notify('⚠️ Restream status needs reconnecting (the sign-in expired). Open abundant-stream.proud-base-a9ba.workers.dev/restream/connect and approve. Streaming is not affected.', 'restream,down');
-      }
-    }
-  }
-  await ntfyFetch(NTFY + RESTREAM_TOPIC, { method: 'POST', body: JSON.stringify(msg) });
-  return msg.ok ? 'posted' : 'error: ' + msg.error;
+async function restreamStatus(req, env, ctx) {
+  const cors = { 'access-control-allow-origin': '*', 'content-type': 'application/json', 'cache-control': 'public, max-age=60' };
+  const cache = caches.default, key = new Request(new URL('/restream/status', req.url).toString());
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  let body;
+  try { body = { t: Math.floor(Date.now() / 1000), ok: true, channels: await readChannels(env) }; }
+  catch (e) { body = { t: Math.floor(Date.now() / 1000), ok: false, error: String(e.message || e).slice(0, 200) }; }
+  const res = new Response(JSON.stringify(body), { headers: cors });
+  ctx.waitUntil(cache.put(key, res.clone()));
+  return res;
 }
 
 export default {
-  // Runs every minute: heartbeat check every 5 minutes; Restream every minute during services, every 15 otherwise.
+  // Runs every minute: renew the Restream sign-in when needed; heartbeat check every 5 minutes.
   async scheduled(event, env, ctx) {
     const min = new Date(event.scheduledTime || Date.now()).getUTCMinutes();
     const jobs = [];
+    if (env.STATE && env.RESTREAM_CLIENT_ID) jobs.push(refreshIfNeeded(env));
     if (min % 5 === 0) jobs.push(checkHeartbeat(false));
-    if (inWindow() || min % 15 === 0) jobs.push(checkRestream(env));
     ctx.waitUntil(Promise.allSettled(jobs));
   },
   // Visiting the worker's URL shows the current check without sending anything.
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const path = new URL(req.url).pathname;
+    if (path === '/restream/status') return restreamStatus(req, env, ctx);
     if (path.startsWith('/restream/')) {
       try { return await restreamRoute(req, env, path); }
       catch (e) { return html('<h2>Error</h2><pre>' + esc(e.message || e) + '</pre>', 502); }
-    }
-    if (path === '/debug') {
-      const out = [];
-      const tries = [['GET', 'https://ntfy.sh/v1/health'], ['GET', 'https://ntfy.sh/v1/health'], ['GET', 'https://ntfy.sh/v1/health'], ['GET', NTFY + STATUS_TOPIC + '/json?poll=1&since=10m'], ['POST', NTFY + 'abundant-debug-x7q2'], ['POST', NTFY + 'abundant-debug-x7q2']];
-      for (const [m, u] of tries) {
-        const t0 = Date.now();
-        try { const r = await fetch(u, { method: m, body: m === 'POST' ? 'debug' : undefined, signal: AbortSignal.timeout(10000) }); out.push(m + ' ' + u.replace(/\?.*/, '') + ' -> ' + r.status + ' ' + (Date.now() - t0) + 'ms'); }
-        catch (e) { out.push(m + ' ' + u.replace(/\?.*/, '') + ' -> ' + e.name + ' ' + (Date.now() - t0) + 'ms'); }
-      }
-      return Response.json(out);
     }
     try { return Response.json(await checkHeartbeat(true)); }
     catch (e) { return Response.json({ error: String(e) }, { status: 502 }); }

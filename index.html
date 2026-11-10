@@ -203,7 +203,7 @@
 (function () {
   var STATUS_TOPIC = 'abundant-status-m4p8w2';
   var ALERT_TOPIC = 'abundant-stream-k7x2q9';
-  var RESTREAM_TOPIC = 'abundant-restream-jg00ai';
+  var RESTREAM_URL = 'https://abundant-stream.proud-base-a9ba.workers.dev/restream/status';
   var NTFY = 'https://ntfy.sh/';
   var TZ = 'America/Denver';
 
@@ -515,7 +515,7 @@
     var box = $('rs-tiles'), fr = $('rs-fresh');
     fr.textContent = rsTime ? '· updated ' + ago(rsTime) : '';
     if (!rs) return;
-    var stale = Date.now() / 1000 - rsTime > 30 * 60;
+    var stale = Date.now() / 1000 - rsTime > 5 * 60;
     box.textContent = '';
     if (!rs.ok || stale) {
       var d = document.createElement('div'); d.className = 'tile bad';
@@ -533,16 +533,16 @@
       box.appendChild(d);
     });
   }
-  function handleRestream(msg) {
-    if (msg.time < rsTime) return;
-    try { rs = JSON.parse(msg.message); rsTime = msg.time; } catch (e) { return; }
-    renderRestream();
+  function loadRestream() {
+    fetch(RESTREAM_URL).then(function (r) { return r.json(); }).then(function (j) {
+      if (j && j.t >= rsTime) { rs = j; rsTime = j.t; renderRestream(); }
+    }).catch(function () {});
   }
   function tick() { renderStatus(); renderEquipment(); renderRestream(); renderNow(); renderNext(); renderRun(); }
   tick(); renderFeed(); loadPrep();
   load(STATUS_TOPIC, handleStatus);
   load(ALERT_TOPIC, handleAlert);
-  load(RESTREAM_TOPIC, handleRestream);
+  loadRestream(); setInterval(loadRestream, 60000);
   setInterval(tick, 1000);
   setInterval(renderLinks, 60000);
   setInterval(loadPrep, 10 * 60000);
