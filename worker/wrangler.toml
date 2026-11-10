@@ -6,9 +6,9 @@ preview_urls = false
 # Keep variables added in the Cloudflare dashboard when GitHub deploys a new version.
 keep_vars = true
 
-# Runs every 5 minutes on Cloudflare (free plan).
+# Runs every minute on Cloudflare (free plan); the code decides what to check each time.
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["* * * * *"]
 
 # Small key-value store for the Restream sign-in (created automatically on deploy).
 [[kv_namespaces]]

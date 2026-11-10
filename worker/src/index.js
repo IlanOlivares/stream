@@ -133,14 +133,79 @@ async function restreamRoute(req, env, path) {
       }
       rows.push('</ul>');
     }
+    try { rows.push('<h3>As the status page will see it</h3><ul>' + (await readChannels(env)).map(c => `<li>${esc(c.platform)} · ${esc(c.name)}: <b>${c.enabled ? 'ON' : 'off'}</b></li>`).join('') + '</ul>'); } catch (e) { rows.push('<pre>' + esc(e.message) + '</pre>'); }
     return html('<h2>Restream test</h2>' + rows.join(''));
   }
   return html('<h2>Not found</h2>', 404);
 }
 
+// ---------- Restream destination status ----------
+const RESTREAM_TOPIC = 'abundant-restream-jg00ai';
+// Service windows (Mountain time): check every minute inside these, every 15 minutes otherwise.
+const WINDOWS = [
+  { day: 0, from: 8 * 60, to: 14 * 60 + 30 },   // Sunday, all three services
+  { day: 3, from: 17 * 60 + 30, to: 20 * 60 + 30 }, // Wednesday
+  { day: 6, from: 16 * 60 + 30, to: 19 * 60 },  // Saturday replay
+];
+function denverNow() {
+  const p = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(new Date());
+  const g = t => p.find(x => x.type === t).value;
+  return { day: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(g('weekday')), min: (parseInt(g('hour'), 10) % 24) * 60 + parseInt(g('minute'), 10) };
+}
+function inWindow() { const n = denverNow(); return WINDOWS.some(w => w.day === n.day && n.min >= w.from && n.min < w.to); }
+
+async function platformNames(env) {
+  const cached = await env.STATE.get('rs_platforms');
+  if (cached) return JSON.parse(cached);
+  const r = await fetch(RS_API + '/v2/platform/all');
+  const list = r.ok ? await r.json() : [];
+  const map = {}; (Array.isArray(list) ? list : []).forEach(p => { map[p.id] = p.name; });
+  await env.STATE.put('rs_platforms', JSON.stringify(map), { expirationTtl: 7 * 86400 });
+  return map;
+}
+
+async function readChannels(env) {
+  const r = await rsGet(env, '/v2/user/channel/all');
+  if (r.status !== 200 || !Array.isArray(r.body)) throw new Error('Restream channel list HTTP ' + r.status);
+  const names = await platformNames(env);
+  return r.body.map(c => ({ name: c.displayName, platform: names[c.streamingPlatformId] || ('Platform ' + c.streamingPlatformId), enabled: !!c.enabled }));
+}
+
+async function checkRestream(env) {
+  if (!env.RESTREAM_CLIENT_ID || !env.STATE) return 'not set up';
+  if (!(await env.STATE.get('restream_tokens'))) return 'not connected';
+  const t = Math.floor(Date.now() / 1000);
+  let msg;
+  try {
+    msg = { t, ok: true, channels: await readChannels(env) };
+    if (await env.STATE.get('rs_broken')) {
+      await env.STATE.delete('rs_broken');
+      await notify('🟢 Restream status is working again.', 'restream,up');
+    }
+  } catch (e) {
+    const text = String(e.message || e);
+    msg = { t, ok: false, error: text.slice(0, 200) };
+    if (/invalid_grant|refresh/i.test(text)) {
+      // Sign-in chain broken: clear it so /restream/connect works again, and tell Ilan once.
+      await env.STATE.delete('restream_tokens');
+      if (!(await env.STATE.get('rs_broken'))) {
+        await env.STATE.put('rs_broken', '1');
+        await notify('⚠️ Restream status needs reconnecting (the sign-in expired). Open abundant-stream.proud-base-a9ba.workers.dev/restream/connect and approve. Streaming is not affected.', 'restream,down');
+      }
+    }
+  }
+  await ntfyFetch(NTFY + RESTREAM_TOPIC, { method: 'POST', body: JSON.stringify(msg) });
+  return msg.ok ? 'posted' : 'error: ' + msg.error;
+}
+
 export default {
+  // Runs every minute: heartbeat check every 5 minutes; Restream every minute during services, every 15 otherwise.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(checkHeartbeat(false));
+    const min = new Date(event.scheduledTime || Date.now()).getUTCMinutes();
+    const jobs = [];
+    if (min % 5 === 0) jobs.push(checkHeartbeat(false));
+    if (inWindow() || min % 15 === 0) jobs.push(checkRestream(env));
+    ctx.waitUntil(Promise.allSettled(jobs));
   },
   // Visiting the worker's URL shows the current check without sending anything.
   async fetch(req, env) {

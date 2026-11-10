@@ -62,6 +62,7 @@
   body.live-mode .tile { padding: 16px; } body.live-mode .tile .state { font-size: 1.4rem; }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 10px; font-size: .78rem; color: var(--muted); }
   .tiles.eq { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 8px; }
+  .tiles.rs { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin-top: 8px; }
   .eq-head { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-top: 16px; }
   .tile .meta { font: .78rem var(--mono); color: var(--muted); margin-top: 6px; line-height: 1.5; }
   .tile .meta b { color: var(--fg); font-weight: 500; }
@@ -155,6 +156,8 @@
       <div class="tile" id="t-mac"><div class="lbl">Companion (church Mac)</div><div class="state">—</div><div class="sub"></div><div class="meta"></div></div>
       <div class="tile" id="t-hd"><div class="lbl">HyperDeck recorder</div><div class="state">—</div><div class="sub"></div><div class="meta"></div></div>
     </div>
+    <div class="eq-head">Restream destinations <span class="dim" id="rs-fresh" style="text-transform:none;letter-spacing:0"></span></div>
+    <div class="tiles rs" id="rs-tiles"><div class="tile"><div class="lbl">Restream</div><div class="state">—</div><div class="sub">Waiting for first report</div></div></div>
     <div class="legend"><span><i style="background:var(--live)"></i>Running</span><span><i style="background:var(--rec)"></i>Recording</span><span><i style="background:var(--warn)"></i>Should be on</span><span><i style="background:var(--off)"></i>Off (not needed now)</span></div>
   </section>
 
@@ -200,6 +203,7 @@
 (function () {
   var STATUS_TOPIC = 'abundant-status-m4p8w2';
   var ALERT_TOPIC = 'abundant-stream-k7x2q9';
+  var RESTREAM_TOPIC = 'abundant-restream-jg00ai';
   var NTFY = 'https://ntfy.sh/';
   var TZ = 'America/Denver';
 
@@ -236,7 +240,7 @@
       [hm(18,30), 'Replay ends', 'Turn Restream channels off afterward']] }
   ];
 
-  var lastStatus = null, lastStatusTime = 0, alerts = [], prep = null;
+  var lastStatus = null, lastStatusTime = 0, alerts = [], prep = null, rs = null, rsTime = 0;
 
   function $(id) { return document.getElementById(id); }
   function text(id, v) { $(id).textContent = v; }
@@ -507,10 +511,37 @@
     }).catch(function () { text('prep-note', 'Prep list unavailable.'); });
   }
 
-  function tick() { renderStatus(); renderEquipment(); renderNow(); renderNext(); renderRun(); }
+  function renderRestream() {
+    var box = $('rs-tiles'), fr = $('rs-fresh');
+    fr.textContent = rsTime ? '· updated ' + ago(rsTime) : '';
+    if (!rs) return;
+    var stale = Date.now() / 1000 - rsTime > 30 * 60;
+    box.textContent = '';
+    if (!rs.ok || stale) {
+      var d = document.createElement('div'); d.className = 'tile bad';
+      d.innerHTML = '<div class="lbl">Restream</div><div class="state">' + (stale ? 'NO UPDATE' : 'CAN\'T READ') + '</div><div class="sub"></div>';
+      d.querySelector('.sub').textContent = stale ? 'Last report ' + ago(rsTime) : 'Restream status needs reconnecting. Streaming is not affected.';
+      box.appendChild(d); return;
+    }
+    rs.channels.forEach(function (c) {
+      var d = document.createElement('div'); d.className = 'tile' + (c.enabled ? ' on' : '');
+      d.innerHTML = '<div class="lbl"></div><div class="state"></div><div class="sub"></div>';
+      d.querySelector('.lbl').textContent = c.platform;
+      d.querySelector('.state').textContent = c.enabled ? 'ON' : 'OFF';
+      d.querySelector('.sub').textContent = c.name;
+      box.appendChild(d);
+    });
+  }
+  function handleRestream(msg) {
+    if (msg.time < rsTime) return;
+    try { rs = JSON.parse(msg.message); rsTime = msg.time; } catch (e) { return; }
+    renderRestream();
+  }
+  function tick() { renderStatus(); renderEquipment(); renderRestream(); renderNow(); renderNext(); renderRun(); }
   tick(); renderFeed(); loadPrep();
   load(STATUS_TOPIC, handleStatus);
   load(ALERT_TOPIC, handleAlert);
+  load(RESTREAM_TOPIC, handleRestream);
   setInterval(tick, 1000);
   setInterval(renderLinks, 60000);
   setInterval(loadPrep, 10 * 60000);
