@@ -207,6 +207,7 @@ const DEST_CHECKS = [
   { day: 0, min: 12 * 60 + 25, label: 'Sun 12:30', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
   { day: 0, min: 14 * 60 + 10, label: 'Sunday', off: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM } },
   { day: 3, min: 18 * 60 + 30, label: 'Wed 6:30', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
+  { day: 3, min: 20 * 60 + 10, label: 'Wednesday', off: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM } },
 ];
 function denverClock(ts) {
   const p = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(new Date(ts));
