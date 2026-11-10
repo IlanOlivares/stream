@@ -10,7 +10,11 @@ const SILENT_MIN = 20;
 const TZ = 'America/Denver';
 
 // ntfy occasionally times out (522) on the first try from Cloudflare; retry quickly.
+// Optional ntfy access token (secret NTFY_TOKEN) so ntfy counts requests per account, not per shared Cloudflare address.
+let NTFY_AUTH = null;
 async function ntfyFetch(url, opts) {
+  opts = opts || {};
+  if (NTFY_AUTH) opts = { ...opts, headers: { ...(opts.headers || {}), authorization: 'Bearer ' + NTFY_AUTH } };
   let last;
   for (let i = 0; i < 3; i++) {
     try {
@@ -192,6 +196,7 @@ async function restreamStatus(req, env, ctx) {
 export default {
   // Runs every minute: renew the Restream sign-in when needed; heartbeat check every 5 minutes.
   async scheduled(event, env, ctx) {
+    NTFY_AUTH = env.NTFY_TOKEN || null;
     const min = new Date(event.scheduledTime || Date.now()).getUTCMinutes();
     const jobs = [];
     if (env.STATE && env.RESTREAM_CLIENT_ID) jobs.push(refreshIfNeeded(env));
@@ -200,11 +205,18 @@ export default {
   },
   // Visiting the worker's URL shows the current check without sending anything.
   async fetch(req, env, ctx) {
+    NTFY_AUTH = env.NTFY_TOKEN || null;
     const path = new URL(req.url).pathname;
     if (path === '/restream/status') return restreamStatus(req, env, ctx);
     if (path.startsWith('/restream/')) {
       try { return await restreamRoute(req, env, path); }
       catch (e) { return html('<h2>Error</h2><pre>' + esc(e.message || e) + '</pre>', 502); }
+    }
+    if (path === '/ntfy-check') {
+      // Three quick reads from ntfy to see whether Cloudflare can reach it reliably.
+      const out = [];
+      for (let i = 0; i < 3; i++) { const t0 = Date.now(); try { const r = await fetch(NTFY + STATUS_TOPIC + '/json?poll=1&since=5m', { headers: NTFY_AUTH ? { authorization: 'Bearer ' + NTFY_AUTH } : {}, signal: AbortSignal.timeout(8000) }); out.push(r.status + ' in ' + (Date.now() - t0) + ' ms'); } catch (e) { out.push(e.name + ' after ' + (Date.now() - t0) + ' ms'); } }
+      return Response.json({ token: !!NTFY_AUTH, reads: out });
     }
     try { return Response.json(await checkHeartbeat(true)); }
     catch (e) { return Response.json({ error: String(e) }, { status: 502 }); }
