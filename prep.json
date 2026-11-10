@@ -1,10 +1,16 @@
 {
-  "updated": "2026-11-09T20:50:00-07:00",
+  "updated": "2026-11-09T23:20:00-07:00",
+  "channel_links": {
+    "YouTube live": "https://www.youtube.com/channel/UCOVPztRFN8bXFYhak1j7KkQ/live",
+    "Facebook": "https://facebook.com/AbundantChurchEP",
+    "Restream": "https://app.restream.io/home",
+    "Church app": "https://abundant.org/app"
+  },
   "services": [
-    {"date":"2026-11-11","service":"Wed 6:30pm","title":"Get Over It: Part 2","subsplash":"Done","links":"Done","restream":"Done","status":"Ready"},
-    {"date":"2026-11-14","service":"Sat 5:00pm replay","title":"Get Over It: Part 2","subsplash":"Done","links":"Done","restream":"Not set","status":"Needs upload"},
-    {"date":"2026-11-15","service":"Sun 9:00am","title":"Waiting for info","subsplash":"Not set","links":"Not set","restream":"Not set","status":"Needs info"},
-    {"date":"2026-11-15","service":"Sun 10:45am","title":"Waiting for info","subsplash":"Not set","links":"Not set","restream":"Not set","status":"Needs info"},
-    {"date":"2026-11-15","service":"Sun 12:30pm","title":"Waiting for info","subsplash":"Not set","links":"Not set","restream":"Not set","status":"Needs info"}
+    {"date":"2026-11-11","service":"Wed 6:30pm","key":"wed","title":"Get Over It: Part 2","outline":"https://notes.subsplash.com/fill-in/view?page=HST4lUwLQz","spanish":"https://youtube.com/live/7aWgnf2SusU","subsplash":"Done","links":"Done","restream":"Done","status":"Ready"},
+    {"date":"2026-11-14","service":"Sat 5:00pm replay","key":"sat","title":"Get Over It: Part 2","outline":"https://notes.subsplash.com/fill-in/view?page=HST4lUwLQz","spanish":"https://youtube.com/live/7aWgnf2SusU","subsplash":"Done","links":"Done","restream":"Not set","status":"Needs upload"},
+    {"date":"2026-11-15","service":"Sun 9:00am","key":"sun9","title":"Waiting for info","subsplash":"Not set","links":"Not set","restream":"Not set","status":"Needs info"},
+    {"date":"2026-11-15","service":"Sun 10:45am","key":"sun1045","title":"Waiting for info","subsplash":"Not set","links":"Not set","restream":"Not set","status":"Needs info"},
+    {"date":"2026-11-15","service":"Sun 12:30pm","key":"sun1230","title":"Waiting for info","subsplash":"Not set","links":"Not set","restream":"Not set","status":"Needs info"}
   ]
 }

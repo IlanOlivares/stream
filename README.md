@@ -7,3 +7,20 @@ Public status page for Abundant Church's livestreams, served by GitHub Pages.
 - **Prep checklist** comes from `prep.json`, updated after each weekly setup run.
 
 No stream keys or passwords are stored here.
+
+## Features
+
+- On-air badge, live status tiles (ATEM, OBS backup, OBS recording, Spanish) with a color key
+- "Now playing" header during services: message title, time live, scheduled end, auto-stop countdown
+- Run sheet for the current or next service, checked off from Companion alerts and the clock
+- Next-service countdown, quick links (this week's outline and Spanish stream, plus channels), alerts feed, prep checklist
+- Phone layout (2×2 tiles) and home-screen icon ("Stream")
+
+## Pending (after Wednesday Nov 11, 2026)
+
+1. **OBS health** in the status message: CPU use, skipped frames, free recording disk space, with warnings on the page.
+2. **Connection checks**: whether Companion is connected to the ATEM, OBS and the Spanish OBS.
+3. **Heartbeat**: a quiet "Companion is alive" status every 15 minutes between services, so the page shows when the church Mac or Companion is down.
+4. **Bitrate chart**: OBS bitrate over the service, from the once-a-minute updates.
+
+Not planned: viewer counts and Restream channel states (would require API keys on a public page).
