@@ -350,13 +350,17 @@
       setMeta('t-mac', 'Restarts with the Mac. Last report <b>' + ago(lastStatusTime) + '</b>');
     }
     if (s && s.hd_conn !== undefined) {
-      var hdOk = s.hd_conn === 'good', rec = /record/i.test(s.hd_status || ''), disk2 = s.hd_slot && !/none|empty|^$/i.test(s.hd_slot);
-      if (!hdOk) setTile('t-hd', 'bad', 'OFFLINE', 'Companion can\'t reach the HyperDeck');
-      else if (rec) setTile('t-hd', 'rec', 'REC', s.hd_time ? s.hd_time : 'Recording');
-      else setTile('t-hd', disk2 ? '' : 'bad', disk2 ? 'READY' : 'NO SSD', disk2 ? 'SSD in, not recording' : 'No SSD detected');
-      setMeta('t-hd', s.hd_remaining ? 'Time left on SSD <b>' + s.hd_remaining + '</b>' : '');
+      var hdOk = s.hd_conn === 'good', rec = /^record/i.test(s.hd_status || '');
+      var ssd = s.hd_slot && !/^(-|none|empty|)$/i.test(s.hd_slot.trim());
+      var liveNow = s.live === '1' && now - lastStatusTime <= 180;
+      if (now - lastStatusTime > HEARD_WARN) setTile('t-hd', 'bad', 'NO UPDATE', 'Last report ' + ago(lastStatusTime));
+      else if (!hdOk) setTile('t-hd', 'bad', 'OFFLINE', 'Companion can\'t reach the HyperDeck');
+      else if (!ssd) setTile('t-hd', 'bad', 'NO SSD', 'No SSD detected in the HyperDeck');
+      else if (rec) setTile('t-hd', 'rec', 'REC', 'Recording to ' + s.hd_slot);
+      else setTile('t-hd', liveNow ? 'bad' : '', liveNow ? 'NOT RECORDING' : 'READY', liveNow ? 'SSD ' + s.hd_slot + ' is in, but not recording' : 'SSD ' + s.hd_slot + ' is in');
+      setMeta('t-hd', ssd && hdOk ? 'Recording time left <b>' + s.hd_remaining + '</b>' + (s.hd_status && !rec ? ' · Status <b>' + s.hd_status + '</b>' : '') : '');
     } else {
-      setTile('t-hd', '', 'NOT SET UP', 'Connection pending'); setMeta('t-hd', 'Will show SSD and recording once connected');
+      setTile('t-hd', '', '—', 'Waiting for first report'); setMeta('t-hd', '');
     }
   }
 

@@ -21,7 +21,7 @@ No stream keys or passwords are stored here.
 1. ~~**OBS health**~~ Done Nov 10: Equipment tiles show OBS uptime, CPU, RAM, fps, disk and skipped frames, plus a "restart suggested" flag.
 2. **Connection checks**: whether Companion is connected to the ATEM, OBS and the Spanish OBS.
 3. ~~**Heartbeat**~~ Done Nov 10: status posts every 15 minutes (trigger "Status heartbeat"), and immediately when OBS connects or drops.
-- **HyperDeck tile**: connection added in Companion but switched off; waiting on whether anything else controls the HyperDeck over the network.
+- ~~**HyperDeck tile**~~ Done Nov 10: Companion reads the HyperDeck Studio 4K Pro (172.16.1.184, status only, no control); tile shows SSD, recording state and time left.
 4. **Bitrate chart**: OBS bitrate over the service, from the once-a-minute updates.
 5. **Watchdog: alert once per outage** instead of every 30 seconds while the ATEM stream is down (Companion change).
 
