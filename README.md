@@ -24,8 +24,7 @@ No stream keys or passwords are stored here.
 - ~~**HyperDeck tile**~~ Done Nov 10: Companion reads the HyperDeck Studio 4K Pro (172.16.1.184, status only, no control); tile shows SSD, recording state and time left.
 4. **Bitrate chart**: OBS bitrate over the service, from the once-a-minute updates.
 5. **Watchdog: alert once per outage** instead of every 30 seconds while the ATEM stream is down (Companion change).
-- **Dead man's switch**: a free outside check-in service (e.g. Healthchecks.io). Companion pings it every 15 minutes; if the pings stop (Mac asleep, crashed or offline, or Companion closed) the service alerts Ilan. Higher priority than the bitrate chart.
-- **Restream on/off tiles** (optional, Ilan to decide): via Restream's API with the sign-in refreshed by Companion; Ilan pastes the keys himself.
+- **Cloud worker (Cloudflare Workers, free)**: one small script, kept in this repo, for the online services Companion shouldn't handle. (a) Dead man's switch: reads the Companion heartbeat on ntfy and alerts Ilan's phone if it stops (replaces the Healthchecks.io idea). (b) Restream destination on/off tiles: the worker keeps the Restream sign-in fresh in its own storage. (c) Optional later: confirm YouTube is actually live. Ilan creates the Cloudflare account and Restream developer app and pastes the secrets himself.
 - **Bitrate chart: ATEM too**: check whether Companion's ATEM connection reports streaming bitrate and buffer; add an ATEM line and a buffer-filling warning if so.
 
 ### Cleanup (after Wednesday Nov 11, 2026)
@@ -34,8 +33,9 @@ No stream keys or passwords are stored here.
 7. **Remove ATEM record on/off** from the 4 Go Live and 4 End triggers (no drive in the ATEM; HyperDeck handles that recording).
 8. **OBS: record with the stream encoder** ("Use stream encoder") to halve encoding load; part of the OBS settings review.
 9. **Restream Storage housekeeping**: Ilan clears old Wednesday recordings now and then (cap is 50; Claude never deletes uploads).
-10. **Companion 5.1.2 update** on the church Mac.
-11. **Scheduled OBS restart** on the church Mac (the uptime tile shows how often it's needed).
-12. **Docs**: remove VDO.Ninja / virtual camera references and add this week's changes to the runbook and setup instructions.
+10. **Merge status triggers**: fold "Status feed (on start/stop)" into the heartbeat trigger as an extra event (one fewer trigger).
+11. **Companion 5.1.2 update** on the church Mac.
+12. **Scheduled OBS restart** on the church Mac (the uptime tile shows how often it's needed).
+13. **Docs**: remove VDO.Ninja / virtual camera references and add this week's changes to the runbook and setup instructions.
 
 Not planned: viewer counts.
