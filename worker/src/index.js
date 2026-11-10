@@ -19,7 +19,9 @@ async function ntfyFetch(url, opts) {
   let last;
   for (let i = 0; i < 5; i++) {
     try {
-      const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(4000) });
+      // A distinct URL per try so a stuck connection isn't reused.
+      const u = (!opts.method || opts.method === 'GET') ? url + (url.includes('?') ? '&' : '?') + 'try=' + i + '-' + Date.now() : url;
+      const res = await fetch(u, { ...opts, signal: AbortSignal.timeout(4000) });
       if (res.ok) return res;
       last = new Error(`ntfy ${res.status}`);
     } catch (e) { last = e; }
