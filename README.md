@@ -36,6 +36,6 @@ No stream keys or passwords are stored here.
 10. **Merge status triggers**: fold "Status feed (on start/stop)" into the heartbeat trigger as an extra event (one fewer trigger).
 11. **Companion 5.1.2 update** on the church Mac.
 12. **Scheduled OBS restart** on the church Mac (the uptime tile shows how often it's needed).
-13. **Docs**: remove VDO.Ninja / virtual camera references and add this week's changes to the runbook and setup instructions.
+13. ~~**Docs**~~ Done Nov 10: runbook has Alerts and checks + Status page and cloud worker sections; VDO.Ninja material removed; Companion connections and trigger pattern updated. Re-touch after the remaining cleanup items.
 
 Not planned: viewer counts.
