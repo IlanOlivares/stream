@@ -9,16 +9,17 @@ const ALERT_TOPIC = 'abundant-stream-k7x2q9';
 const SILENT_MIN = 20;
 const TZ = 'America/Denver';
 
-// ntfy occasionally times out (522) on the first try from Cloudflare; retry quickly.
+// About 1 in 3 requests from Cloudflare to ntfy hangs; a quick retry almost always gets through.
+// If every try fails, the next 5-minute run tries again (the down alert is resent until it lands).
 // Optional ntfy access token (secret NTFY_TOKEN) so ntfy counts requests per account, not per shared Cloudflare address.
 let NTFY_AUTH = null;
 async function ntfyFetch(url, opts) {
   opts = opts || {};
   if (NTFY_AUTH) opts = { ...opts, headers: { ...(opts.headers || {}), authorization: 'Bearer ' + NTFY_AUTH } };
   let last;
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 5; i++) {
     try {
-      const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(8000) });
+      const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(4000) });
       if (res.ok) return res;
       last = new Error(`ntfy ${res.status}`);
     } catch (e) { last = e; }
