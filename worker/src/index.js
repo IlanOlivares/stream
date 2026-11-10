@@ -109,7 +109,10 @@ async function restreamRoute(req, env, path) {
   }
   if (path === '/restream/callback') {
     const code = url.searchParams.get('code'), state = url.searchParams.get('state');
-    if (!code) return html('<h2>Not connected</h2><p>Restream didn\'t send a code (the request may have been declined).</p>', 400);
+    if (!code) {
+      const got = [...url.searchParams.entries()].map(([k, v]) => esc(k) + ' = ' + esc(v.slice(0, 200))).join('<br>') || '(nothing)';
+      return html('<h2>Not connected</h2><p>Restream didn\'t send a code. It sent back:</p><p style="font-family:monospace;color:#f5b041">' + got + '</p>', 400);
+    }
     if (!state || state !== await env.STATE.get('oauth_state')) return html('<h2>Link expired</h2><p>Start again from /restream/connect.</p>', 400);
     await env.STATE.delete('oauth_state');
     await saveTokens(env, await tokenRequest(env, { grant_type: 'authorization_code', redirect_uri: callbackUrl(req), code }));
