@@ -24,4 +24,12 @@ No stream keys or passwords are stored here.
 4. **Bitrate chart**: OBS bitrate over the service, from the once-a-minute updates.
 5. **Watchdog: alert once per outage** instead of every 30 seconds while the ATEM stream is down (Companion change).
 
+### Cleanup (after Wednesday Nov 11, 2026)
+
+6. **Delete the old claude.ai status page** ("Abundant Stream Status") once this page is confirmed working; confirm with Ilan before deleting.
+7. **Remove ATEM record on/off** from the 4 Go Live and 4 End triggers (no drive in the ATEM; HyperDeck handles that recording).
+8. **OBS: record with the stream encoder** ("Use stream encoder") to halve encoding load; part of the OBS settings review.
+9. **Restream Storage housekeeping**: Ilan clears old Wednesday recordings now and then (cap is 50; Claude never deletes uploads).
+10. **Docs**: remove VDO.Ninja / virtual camera references and add this week's changes to the runbook and setup instructions.
+
 Not planned: viewer counts and Restream channel states (would require API keys on a public page).
