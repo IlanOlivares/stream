@@ -24,7 +24,7 @@ No stream keys or passwords are stored here.
 - ~~**HyperDeck tile**~~ Done Nov 10: Companion reads the HyperDeck Studio 4K Pro (172.16.1.184, status only, no control); tile shows SSD, recording state and time left.
 4. **Bitrate chart**: OBS bitrate over the service, from the once-a-minute updates.
 5. **Watchdog: alert once per outage** instead of every 30 seconds while the ATEM stream is down (Companion change).
-- **Cloud worker (Cloudflare Workers, free)**: one small script, kept in this repo, for the online services Companion shouldn't handle. (a) Dead man's switch: reads the Companion heartbeat on ntfy and alerts Ilan's phone if it stops (replaces the Healthchecks.io idea). (b) Restream destination on/off tiles: the worker keeps the Restream sign-in fresh in its own storage. (c) Optional later: confirm YouTube is actually live. Ilan creates the Cloudflare account and Restream developer app and pastes the secrets himself.
+- ~~**Cloud worker**~~ Done Nov 10: Cloudflare worker `abundant-stream` (code in `worker/`). Dead man's switch live (test with a real 25-min outage after Wednesday). Restream destination tiles live on the status page. Optional later: confirm YouTube is actually live.
 - **Bitrate chart: ATEM too**: check whether Companion's ATEM connection reports streaming bitrate and buffer; add an ATEM line and a buffer-filling warning if so.
 
 ### Cleanup (after Wednesday Nov 11, 2026)
