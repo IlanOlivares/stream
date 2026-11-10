@@ -133,6 +133,7 @@ async function restreamRoute(req, env, path) {
       }
       rows.push('</ul>');
     }
+    try { rows.push('<p>Status page update: ' + esc(await checkRestream(env)) + '</p>'); } catch (e) { rows.push('<pre>' + esc(e.message) + '</pre>'); }
     try { rows.push('<h3>As the status page will see it</h3><ul>' + (await readChannels(env)).map(c => `<li>${esc(c.platform)} · ${esc(c.name)}: <b>${c.enabled ? 'ON' : 'off'}</b></li>`).join('') + '</ul>'); } catch (e) { rows.push('<pre>' + esc(e.message) + '</pre>'); }
     return html('<h2>Restream test</h2>' + rows.join(''));
   }
