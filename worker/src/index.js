@@ -216,11 +216,12 @@ export default {
       catch (e) { return html('<h2>Error</h2><pre>' + esc(e.message || e) + '</pre>', 502); }
     }
     if (path === '/debug') {
-      const out = {};
-      for (const u of ['https://ntfy.sh/v1/health', 'https://ntfy.sh/' + STATUS_TOPIC + '/json?poll=1&since=1h', 'https://example.com/']) {
+      const out = [];
+      const tries = [['GET', 'https://ntfy.sh/v1/health'], ['GET', 'https://ntfy.sh/v1/health'], ['GET', 'https://ntfy.sh/v1/health'], ['GET', NTFY + STATUS_TOPIC + '/json?poll=1&since=10m'], ['POST', NTFY + 'abundant-debug-x7q2'], ['POST', NTFY + 'abundant-debug-x7q2']];
+      for (const [m, u] of tries) {
         const t0 = Date.now();
-        try { const r = await fetch(u); out[u.split('?')[0]] = r.status + ' in ' + (Date.now() - t0) + 'ms'; }
-        catch (e) { out[u.split('?')[0]] = 'error ' + e; }
+        try { const r = await fetch(u, { method: m, body: m === 'POST' ? 'debug' : undefined, signal: AbortSignal.timeout(10000) }); out.push(m + ' ' + u.replace(/\?.*/, '') + ' -> ' + r.status + ' ' + (Date.now() - t0) + 'ms'); }
+        catch (e) { out.push(m + ' ' + u.replace(/\?.*/, '') + ' -> ' + e.name + ' ' + (Date.now() - t0) + 'ms'); }
       }
       return Response.json(out);
     }
