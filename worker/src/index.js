@@ -194,13 +194,57 @@ async function restreamStatus(req, env, ctx) {
   return res;
 }
 
+// ---------- Restream destination checks (alerts only when something is wrong) ----------
+// Times are Mountain. "on" = these must be on; "off" = these must be off.
+const YT = c => /youtube/i.test(c.platform);
+const FB = c => /^facebook$/i.test(c.platform);
+const SUB = c => /subsplash/i.test(c.name);
+const KTSM = c => /ktsm/i.test(c.name);
+const DEST_CHECKS = [
+  { day: 0, min: 9 * 60, label: 'Sun 9:00', on: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM } },
+  { day: 0, min: 10 * 60 + 35, label: 'Sun 9:00', off: { KTSM } },
+  { day: 0, min: 10 * 60 + 40, label: 'Sun 10:45', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
+  { day: 0, min: 12 * 60 + 25, label: 'Sun 12:30', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
+  { day: 0, min: 14 * 60 + 10, label: 'Sunday', off: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM } },
+  { day: 3, min: 18 * 60 + 30, label: 'Wed 6:30', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
+];
+function denverClock(ts) {
+  const p = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(new Date(ts));
+  const g = t => p.find(x => x.type === t).value;
+  return { day: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(g('weekday')), min: (parseInt(g('hour'), 10) % 24) * 60 + parseInt(g('minute'), 10) };
+}
+function destProblems(check, channels) {
+  const out = [];
+  for (const [name, match] of Object.entries(check.on || {})) {
+    const c = channels.filter(match);
+    if (!c.length) out.push(name + ' not found in Restream');
+    else if (!c.some(x => x.enabled)) out.push(name + ' is off');
+  }
+  for (const [name, match] of Object.entries(check.off || {})) {
+    if (channels.filter(match).some(x => x.enabled)) out.push(name + ' is still on');
+  }
+  return out;
+}
+async function checkDestinations(env, ts) {
+  const now = denverClock(ts);
+  const check = DEST_CHECKS.find(c => c.day === now.day && c.min === now.min);
+  if (!check || !(await env.STATE.get('restream_tokens'))) return 'nothing due';
+  const problems = destProblems(check, await readChannels(env));
+  if (!problems.length) return 'ok';
+  const msg = check.on
+    ? `⚠️ ${check.label}: Restream destination problem: ${problems.join(', ')}. Viewers there can't see the stream.`
+    : `⚠️ ${check.label} is over but ${problems.join(', ')} in Restream. Turn ${problems.length > 1 ? 'them' : 'it'} off so the ATEM can't broadcast by accident.`;
+  await notify(msg, 'restream,destinations');
+  return 'alerted';
+}
+
 export default {
   // Runs every minute: renew the Restream sign-in when needed; heartbeat check every 5 minutes.
   async scheduled(event, env, ctx) {
     NTFY_AUTH = env.NTFY_TOKEN || null;
     const min = new Date(event.scheduledTime || Date.now()).getUTCMinutes();
     const jobs = [];
-    if (env.STATE && env.RESTREAM_CLIENT_ID) jobs.push(refreshIfNeeded(env));
+    if (env.STATE && env.RESTREAM_CLIENT_ID) jobs.push(refreshIfNeeded(env).then(() => checkDestinations(env, event.scheduledTime || Date.now())));
     if (min % 5 === 0) jobs.push(checkHeartbeat(false).then(
       r => env.STATE && env.STATE.put('hb_last', JSON.stringify({ at: new Date().toISOString(), ok: true, action: r.action })),
       e => env.STATE && env.STATE.put('hb_last', JSON.stringify({ at: new Date().toISOString(), ok: false, error: String(e && e.message || e) }))));
