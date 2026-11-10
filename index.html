@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Abundant Stream Status</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  /* Layout: broadcast control-room board — status strip first, then feed + prep */
+  :root {
+    --bg: #0f1214; --panel: #171c1f; --panel-2: #1d2327; --line: #2a3237;
+    --fg: #e8ecee; --muted: #8d989e; --live: #2fd27a; --rec: #ff4d4f; --warn: #f5b041; --off: #4a545a;
+    --sans: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--sans);
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 32px max(16px, env(safe-area-inset-left)); }
+  .wrap { max-width: 1100px; margin: 0 auto; display: grid; gap: 20px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+  h1 { font-size: 1.35rem; font-weight: 700; margin: 0; letter-spacing: .01em; }
+  h1 small { display: block; font-size: .8rem; font-weight: 500; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+  .onair { font: 600 .85rem var(--mono); letter-spacing: .12em; padding: 6px 14px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+  .onair.live { color: #04140b; background: var(--live); border-color: var(--live); }
+  .onair.stale { color: #1a1204; background: var(--warn); border-color: var(--warn); }
+  .meta { color: var(--muted); font-size: .85rem; }
+  .tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--off); border-radius: 8px; padding: 14px 16px; min-width: 0; }
+  .tile.on { border-left-color: var(--live); }
+  .tile.rec { border-left-color: var(--rec); }
+  .tile.bad { border-left-color: var(--warn); }
+  .tile .lbl { font-size: .78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  .tile .state { font: 600 1.25rem var(--mono); margin-top: 4px; }
+  .tile.on .state { color: var(--live); } .tile.rec .state { color: var(--rec); } .tile.bad .state { color: var(--warn); }
+  .tile .sub { font: .9rem var(--mono); color: var(--muted); margin-top: 2px; min-height: 1.4em; }
+  .grid2 { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); align-items: start; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+  .card h2 { font-size: 1rem; margin: 0 0 4px; font-weight: 600; }
+  .card .note { color: var(--muted); font-size: .82rem; margin: 0 0 12px; }
+  .next { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+  .next .count { font: 600 2rem var(--mono); }
+  .feed { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow: auto; }
+  .feed li { display: grid; grid-template-columns: 68px 1fr; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .feed li:first-child { border-top: 0; }
+  .feed time { font: .8rem var(--mono); color: var(--muted); padding-top: 2px; }
+  .feed .msg { word-break: break-word; }
+  .feed li.warn .msg { color: var(--warn); }
+  .empty { color: var(--muted); font-size: .9rem; padding: 8px 0; }
+  .feed li.empty { display: block; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th { text-align: left; font-weight: 500; color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  .pill { display: inline-block; font-size: .75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+  .p-ok { color: var(--live); } .p-warn { color: var(--warn); } .p-muted { color: var(--muted); } .p-bad { color: var(--rec); }
+  .dim { color: var(--muted); }
+  @media (max-width: 600px) { .hide-sm { display: none; } }
+  footer { color: var(--muted); font-size: .8rem; }
+  :focus-visible { outline: 2px solid var(--live); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><small>Abundant Church</small>Stream Status</h1>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span class="meta" id="updated">Connecting…</span>
+      <span class="onair" id="onair">OFF AIR</span>
+    </div>
+  </header>
+
+  <section class="tiles" aria-label="Live status">
+    <div class="tile" id="t-atem"><div class="lbl">ATEM stream</div><div class="state">—</div><div class="sub"></div></div>
+    <div class="tile" id="t-obs"><div class="lbl">OBS backup stream</div><div class="state">—</div><div class="sub"></div></div>
+    <div class="tile" id="t-rec"><div class="lbl">OBS recording</div><div class="state">—</div><div class="sub"></div></div>
+    <div class="tile" id="t-sp"><div class="lbl">Spanish stream</div><div class="state">—</div><div class="sub"></div></div>
+  </section>
+
+  <section class="card" aria-label="Next service">
+    <div class="next"><span class="dim">Next service</span><strong id="next-name">—</strong><span class="count" id="next-count">—</span></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Alerts</h2>
+      <p class="note">Messages from Companion, newest first (last 12 hours).</p>
+      <ul class="feed" id="feed"><li class="empty">No alerts in the last 12 hours.</li></ul>
+    </section>
+    <section class="card">
+      <h2>This week's prep</h2>
+      <p class="note" id="prep-note">What's set up for each service.</p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Date</th><th>Service</th><th class="hide-sm">Message</th><th>Status</th></tr></thead>
+          <tbody id="prep"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <footer>Status updates about once a minute while a service is live. Phone alerts remain the primary notice.</footer>
+</div>
+
+<script>
+(function () {
+  var STATUS_TOPIC = 'abundant-status-m4p8w2';
+  var ALERT_TOPIC = 'abundant-stream-k7x2q9';
+  var NTFY = 'https://ntfy.sh/';
+  var TZ = 'America/Denver';
+  // [day (0=Sun), start minute, label, spanish?]
+  var SERVICES = [
+    [0, 540, 'Sunday 9:00 am', true], [0, 645, 'Sunday 10:45 am', false], [0, 750, 'Sunday 12:30 pm', false],
+    [3, 1110, 'Wednesday 6:30 pm', true], [6, 1020, 'Saturday 5:00 pm replay', false]
+  ];
+
+  var lastStatus = null, lastStatusTime = 0, alerts = [];
+
+  function $(id) { return document.getElementById(id); }
+  function nowDenver() {
+    var p = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: false }).formatToParts(new Date());
+    var g = function (t) { return p.find(function (x) { return x.type === t; }).value; };
+    return { day: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(g('weekday')), sec: (parseInt(g('hour'), 10) % 24) * 3600 + parseInt(g('minute'), 10) * 60 + parseInt(g('second'), 10) };
+  }
+  function fmtTime(ts) { return new Date(ts * 1000).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }); }
+  function ago(ts) { var s = Math.round(Date.now() / 1000 - ts); if (s < 60) return 'just now'; var m = Math.round(s / 60); return m < 60 ? m + ' min ago' : Math.round(m / 60) + ' h ago'; }
+
+  function setTile(id, cls, state, sub) {
+    var el = $(id); el.className = 'tile' + (cls ? ' ' + cls : '');
+    el.querySelector('.state').textContent = state; el.querySelector('.sub').textContent = sub || '';
+  }
+
+  function render() {
+    var s = lastStatus, stale = false;
+    var live = s && s.live === '1';
+    if (live && Date.now() / 1000 - lastStatusTime > 180) stale = true;
+    var onair = $('onair');
+    onair.className = 'onair' + (live ? (stale ? ' stale' : ' live') : '');
+    onair.textContent = live ? (stale ? 'NO UPDATE' : 'ON AIR') : 'OFF AIR';
+    $('updated').textContent = lastStatusTime ? 'Last update ' + fmtTime(lastStatusTime) + ' (' + ago(lastStatusTime) + ')' : 'No status received yet';
+
+    if (!s) { ['t-atem','t-obs','t-rec','t-sp'].forEach(function (id) { setTile(id, '', '—', 'Waiting for Companion'); }); return; }
+    var bad = live && !stale;
+    var atemOn = s.atem_stream === true || s.atem_stream === 'true';
+    setTile('t-atem', atemOn ? 'on' : (bad ? 'bad' : ''), atemOn ? 'LIVE' : 'OFF', atemOn ? s.atem_time : '');
+    var obsOn = s.obs_stream && s.obs_stream !== 'Off-Air';
+    setTile('t-obs', obsOn ? 'on' : (bad ? 'bad' : ''), obsOn ? 'LIVE' : 'OFF', obsOn ? s.obs_time + ' · ' + s.kbps + ' kbps' : '');
+    var recOn = s.obs_rec && s.obs_rec !== 'Stopped';
+    setTile('t-rec', recOn ? 'rec' : (bad ? 'bad' : ''), recOn ? 'REC' : 'STOPPED', recOn ? s.obs_rec_time : '');
+    var spOn = s.spanish && s.spanish !== 'Off-Air';
+    var cur = currentService();
+    var spExpected = cur && cur[3];
+    setTile('t-sp', spOn ? 'on' : (bad && spExpected ? 'bad' : ''), spOn ? 'LIVE' : 'OFF', spOn ? s.spanish_time : (live && !spExpected ? 'No Spanish this service' : ''));
+  }
+
+  function currentService() {
+    var n = nowDenver(), m = n.sec / 60;
+    return SERVICES.find(function (x) { return x[0] === n.day && m >= x[1] - 10 && m < x[1] + 95; }) || null;
+  }
+
+  function renderNext() {
+    var n = nowDenver(), best = null;
+    SERVICES.forEach(function (x) {
+      var d = (x[0] - n.day + 7) % 7, diff = d * 86400 + x[1] * 60 - n.sec;
+      if (diff < -95 * 60) diff += 7 * 86400;
+      if (!best || diff < best.diff) best = { diff: diff, label: x[2] };
+    });
+    $('next-name').textContent = best.label;
+    var c = $('next-count');
+    if (best.diff <= 0) { c.textContent = 'In progress'; return; }
+    var dd = Math.floor(best.diff / 86400), hh = Math.floor(best.diff % 86400 / 3600), mm = Math.floor(best.diff % 3600 / 60), ss = best.diff % 60;
+    c.textContent = (dd ? dd + 'd ' : '') + String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0');
+  }
+
+  function renderFeed() {
+    var ul = $('feed'); ul.replaceChildren();
+    if (!alerts.length) { var e = document.createElement('li'); e.className = 'empty'; e.textContent = 'No alerts in the last 12 hours.'; ul.appendChild(e); return; }
+    alerts.slice().sort(function (a, b) { return b.time - a.time; }).slice(0, 60).forEach(function (a) {
+      var li = document.createElement('li'); if (/^⚠/.test(a.message)) li.className = 'warn';
+      var t = document.createElement('time'); t.textContent = fmtTime(a.time);
+      var m = document.createElement('div'); m.className = 'msg'; m.textContent = a.message;
+      li.appendChild(t); li.appendChild(m); ul.appendChild(li);
+    });
+  }
+
+  function handleStatus(msg) {
+    if (msg.time < lastStatusTime) return;
+    try { lastStatus = JSON.parse(msg.message); lastStatusTime = msg.time; } catch (e) { return; }
+    render();
+  }
+  function handleAlert(msg) {
+    if (alerts.some(function (a) { return a.id === msg.id; })) return;
+    alerts.push({ id: msg.id, time: msg.time, message: msg.message || '' }); renderFeed();
+  }
+
+  function load(topic, handler) {
+    fetch(NTFY + topic + '/json?poll=1&since=12h').then(function (r) { return r.text(); }).then(function (t) {
+      t.split('\n').forEach(function (l) { if (!l) return; try { var j = JSON.parse(l); if (j.event === 'message') handler(j); } catch (e) {} });
+    }).catch(function () {}).finally(function () {
+      var es = new EventSource(NTFY + topic + '/sse');
+      es.onmessage = function (ev) { try { var j = JSON.parse(ev.data); if (j.event === 'message') handler(j); } catch (e) {} };
+    });
+  }
+
+  function pillClass(v) { return ({ 'Done': 'p-muted', 'Ready': 'p-ok', 'Needs info': 'p-warn', 'Needs upload': 'p-warn', 'Not set': 'p-warn' })[v] || 'p-muted'; }
+  function loadPrep() {
+    fetch('prep.json', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
+      var tb = $('prep'); tb.replaceChildren();
+      d.services.forEach(function (s) {
+        var tr = document.createElement('tr');
+        var date = new Date(s.date + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' });
+        [[date, 'dim'], [s.service, ''], [s.title, 'hide-sm' + (s.title === 'Waiting for info' ? ' dim' : '')]].forEach(function (c) {
+          var td = document.createElement('td'); td.textContent = c[0]; if (c[1]) td.className = c[1]; tr.appendChild(td);
+        });
+        var td = document.createElement('td'), sp = document.createElement('span'); sp.className = 'pill ' + pillClass(s.status); sp.textContent = s.status; td.appendChild(sp); tr.appendChild(td);
+        tb.appendChild(tr);
+      });
+      if (d.updated) $('prep-note').textContent = 'Updated ' + new Date(d.updated).toLocaleString('en-US', { timeZone: TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + '.';
+    }).catch(function () { $('prep-note').textContent = 'Prep list unavailable.'; });
+  }
+
+  render(); renderNext(); renderFeed(); loadPrep();
+  load(STATUS_TOPIC, handleStatus);
+  load(ALERT_TOPIC, handleAlert);
+  setInterval(function () { renderNext(); render(); }, 1000);
+})();
+</script>
+</body>
+</html>
