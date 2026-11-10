@@ -52,7 +52,16 @@ export default {
     ctx.waitUntil(checkHeartbeat(false));
   },
   // Visiting the worker's URL shows the current check without sending anything.
-  async fetch() {
+  async fetch(req) {
+    if (new URL(req.url).pathname === '/debug') {
+      const out = {};
+      for (const u of ['https://ntfy.sh/v1/health', 'https://ntfy.sh/' + STATUS_TOPIC + '/json?poll=1&since=1h', 'https://example.com/']) {
+        const t0 = Date.now();
+        try { const r = await fetch(u); out[u.split('?')[0]] = r.status + ' in ' + (Date.now() - t0) + 'ms'; }
+        catch (e) { out[u.split('?')[0]] = 'error ' + e; }
+      }
+      return Response.json(out);
+    }
     try { return Response.json(await checkHeartbeat(true)); }
     catch (e) { return Response.json({ error: String(e) }, { status: 502 }); }
   },

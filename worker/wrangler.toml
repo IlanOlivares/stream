@@ -1,6 +1,8 @@
 name = "abundant-stream"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
+workers_dev = true
+preview_urls = false
 
 # Runs every 5 minutes on Cloudflare (free plan).
 [triggers]
