@@ -483,7 +483,7 @@
     if (!rs.ok || stale5) { setTile('t-hub', 'bad', stale5 ? 'No update' : 'Can\'t read', 'Destination status unavailable'); drawWires(); return; }
     var on = rs.channels.filter(function (c) { return c.enabled; }).length, n = rs.channels.length;
     var feeding = live && !stale && ($('t-atem').classList.contains('on') || $('t-obs').classList.contains('on'));
-    setTile('t-hub', feeding ? 'on' : '', feeding ? 'Receiving' : 'Standby', on + ' of ' + n + ' destinations on');
+    setTile('t-hub', feeding ? 'on' : '', feeding ? 'Receiving' : 'Standby', on + ' of ' + n + ' destinations on' + (rs.event && rs.event.title ? ' for ' + rs.event.title.replace(/^#ChurchOnline \| | \| Abundant Church$/g, '') : ''));
     drawWires();
   }
 

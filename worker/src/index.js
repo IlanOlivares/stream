@@ -191,11 +191,28 @@ async function platformNames(env) {
   await env.STATE.put('rs_platforms', JSON.stringify(map), { expirationTtl: 7 * 86400 });
   return map;
 }
-async function readChannels(env) {
+// Restream's newer app chooses destinations per stream (event) instead of global on/off switches, and the
+// old "enabled" flag no longer follows it. So: if a stream is in progress or set up as upcoming, a destination
+// counts as on when that stream includes it; with no stream set up, fall back to the old flag.
+async function readEvent(env) {
+  for (const p of ['/v2/user/events/in-progress', '/v2/user/events/upcoming']) {
+    const r = await rsGet(env, p);
+    const list = Array.isArray(r.body) ? r.body : [];
+    if (r.status !== 200 || !list.length) continue;
+    const ev = list.find(e => e.isInstant) || list[0];
+    const ids = new Set(); list.forEach(e => (e.destinations || []).forEach(d => ids.add(String(d.channelId))));
+    return { title: ev.title || '', live: p.includes('in-progress'), ids, count: list.length };
+  }
+  return null;
+}
+async function readChannels(env, withEvent) {
   const r = await rsGet(env, '/v2/user/channel/all');
   if (r.status !== 200 || !Array.isArray(r.body)) throw new Error('Restream channel list HTTP ' + r.status);
   const names = await platformNames(env);
-  return r.body.map(c => ({ name: c.displayName, platform: names[c.streamingPlatformId] || ('Platform ' + c.streamingPlatformId), enabled: !!c.enabled }));
+  const ev = await readEvent(env).catch(() => null);
+  const channels = r.body.map(c => ({ name: c.displayName, platform: names[c.streamingPlatformId] || ('Platform ' + c.streamingPlatformId),
+    enabled: ev ? ev.ids.has(String(c.id)) : !!c.enabled }));
+  return withEvent ? { channels, event: ev ? { title: ev.title, live: ev.live, count: ev.count } : null } : channels;
 }
 async function restreamStatus(req, env, ctx) {
   const cors = { 'access-control-allow-origin': '*', 'content-type': 'application/json', 'cache-control': 'public, max-age=60' };
@@ -203,7 +220,7 @@ async function restreamStatus(req, env, ctx) {
   const hit = await cache.match(key);
   if (hit) return hit;
   let body;
-  try { body = { t: Math.floor(Date.now() / 1000), ok: true, channels: await readChannels(env) }; }
+  try { const rc = await readChannels(env, true); body = { t: Math.floor(Date.now() / 1000), ok: true, channels: rc.channels, event: rc.event }; }
   catch (e) { body = { t: Math.floor(Date.now() / 1000), ok: false, error: String(e.message || e).slice(0, 200) }; }
   const res = new Response(JSON.stringify(body), { headers: cors });
   ctx.waitUntil(cache.put(key, res.clone()));
