@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Abundant Stream Status</title>
 <meta name="robots" content="noindex">
-<meta name="theme-color" content="#0f1214">
+<meta name="theme-color" content="#0e1318">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Stream">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -13,198 +13,269 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;500;600;700&display=swap">
 <style>
-  /* Layout: broadcast control-room board. Live mode puts status + run sheet first; standby puts countdown + prep first. */
+  /* Concept: a broadcast signal-flow board. One bold element (the signal path, with live wires);
+     everything else is quiet type on a graphite ground. Status colour follows broadcast convention:
+     red tally = on air / recording, green = healthy, amber = needs attention, grey = idle. */
   :root {
-    --bg: #0f1214; --panel: #171c1f; --panel-2: #1d2327; --line: #2a3237;
-    --fg: #e8ecee; --muted: #8d989e; --live: #2fd27a; --rec: #ff4d4f; --warn: #f5b041; --off: #4a545a;
-    --sans: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
-    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --bg: #0e1318; --surface: #151b21; --surface-2: #1b232a; --line: #252f38; --line-2: #33404b;
+    --ink: #edf1f4; --ink-2: #a3aeb8; --ink-3: #6e7a85;
+    --ok: #4cc58c; --warn: #f2a93b; --tally: #ff5149; --idle: #47535e;
+    --c-atem: #d95926; --c-obs: #3987e5;
+    --font: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --r: 14px;
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
-  body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--sans);
-    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 32px max(16px, env(safe-area-inset-left)); }
+  body { background: var(--bg); color: var(--ink); font: 400 15px/1.5 var(--font); font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 40px max(16px, env(safe-area-inset-left)); }
   a { color: inherit; }
-  .wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
-  header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-  h1 { font-size: 1.35rem; font-weight: 700; margin: 0; }
-  h1 small { display: block; font-size: .78rem; font-weight: 500; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
-  .onair { font: 600 .85rem var(--mono); letter-spacing: .12em; padding: 6px 14px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
-  .onair.live { color: #04140b; background: var(--live); border-color: var(--live); }
-  .onair.stale { color: #1a1204; background: var(--warn); border-color: var(--warn); }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
-  .card h2 { font-size: 1rem; margin: 0; font-weight: 600; }
-  .card .note { color: var(--muted); font-size: .82rem; margin: 2px 0 12px; }
-  .head-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px; }
-  .fresh { font: .8rem var(--mono); color: var(--muted); }
-  .fresh.stale { color: var(--warn); }
+  .wrap { max-width: 1160px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+  .muted { color: var(--ink-2); } .faint { color: var(--ink-3); }
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 4px; }
 
-  /* Now playing */
-  .now { display: none; border-left: 4px solid var(--live); }
-  body.live-mode .now { display: block; }
-  .now .eyebrow { font: 600 .75rem var(--mono); color: var(--live); letter-spacing: .1em; text-transform: uppercase; }
-  .now .title { font-size: 1.3rem; font-weight: 700; margin: 2px 0 10px; text-wrap: balance; }
-  .now .stats { display: flex; flex-wrap: wrap; gap: 8px 28px; }
-  .now .stat span { display: block; font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
-  .now .stat b { font: 600 1.15rem var(--mono); }
+  /* Top bar */
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0 8px; }
+  .brand { display: flex; align-items: baseline; gap: 10px; font-weight: 600; letter-spacing: -.01em; }
+  .brand span { color: var(--ink-3); font-weight: 400; }
+  .tally { display: inline-flex; align-items: center; gap: 9px; padding: 7px 14px 7px 12px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--line); font-weight: 600; font-size: .9rem; color: var(--ink-2); white-space: nowrap; }
+  .tally i { width: 9px; height: 9px; border-radius: 50%; background: var(--idle); }
+  .tally.live { background: var(--tally); border-color: var(--tally); color: #fff; }
+  .tally.live i { background: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,.28); animation: pulse 2s ease-in-out infinite; }
+  .tally.stale { color: var(--warn); border-color: rgba(242,169,59,.45); } .tally.stale i { background: var(--warn); }
+  .tally.replay { color: var(--ink); } .tally.replay i { background: var(--ok); }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(255,255,255,0); } }
 
-  /* Status tiles */
-  .tiles { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .tile { background: var(--panel-2); border: 1px solid var(--line); border-left: 4px solid var(--off); border-radius: 8px; padding: 12px 14px; min-width: 0; }
-  .tile.on { border-left-color: var(--live); } .tile.rec { border-left-color: var(--rec); } .tile.bad { border-left-color: var(--warn); }
-  .tile .lbl { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
-  .tile .state { font: 600 1.1rem var(--mono); margin-top: 2px; }
-  .tile.on .state { color: var(--live); } .tile.rec .state { color: var(--rec); } .tile.bad .state { color: var(--warn); }
-  .tile .sub { font: .82rem var(--mono); color: var(--muted); margin-top: 2px; min-height: 1.3em; overflow-wrap: anywhere; }
-  body.live-mode .tile { padding: 16px; } body.live-mode .tile .state { font-size: 1.4rem; }
-  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 10px; font-size: .78rem; color: var(--muted); }
-  .tiles.eq { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 8px; }
-  .chart { position: relative; margin-top: 8px; }
+  /* Hero */
+  .hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 40px; align-items: end; padding: 20px 0 28px; border-bottom: 1px solid var(--line); }
+  .hero .kicker { color: var(--ink-2); font-size: 1rem; margin: 0 0 6px; }
+  body.live-mode .hero .kicker { color: var(--tally); font-weight: 600; }
+  .hero h1 { font-size: clamp(1.9rem, 4.6vw, 3.1rem); line-height: 1.05; font-weight: 600; letter-spacing: -.025em; margin: 0; text-wrap: balance; }
+  .hero .sub { margin-top: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; color: var(--ink-2); font-size: 1rem; }
+  .clock { text-align: right; }
+  .clock .big { font-size: clamp(2.6rem, 8vw, 5.4rem); font-weight: 300; letter-spacing: -.04em; line-height: .95; }
+  .clock .cap { color: var(--ink-3); font-size: .9rem; margin-top: 8px; }
+  .hero .then { grid-column: 1 / -1; color: var(--ink-3); font-size: .92rem; display: none; }
+  body.live-mode .hero .then { display: block; }
+
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; font-weight: 600; padding: 2px 10px 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
+  .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .p-ok { color: var(--ok); } .p-warn { color: var(--warn); } .p-muted { color: var(--ink-3); }
+
+  /* Panels */
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px; min-width: 0; }
+  .ph { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; margin-bottom: 18px; }
+  .ph h2 { font-size: 1.12rem; font-weight: 600; letter-spacing: -.01em; margin: 0; }
+  .ph .note { color: var(--ink-3); font-size: .86rem; }
+  .ph .note.stale { color: var(--warn); }
+  .grid { display: grid; gap: 20px; grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .span-7 { grid-column: span 7; } .span-5 { grid-column: span 5; } .span-6 { grid-column: span 6; } .span-12 { grid-column: 1 / -1; }
+
+  /* Signal path */
+  .path { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .9fr) minmax(0, 1fr); column-gap: clamp(40px, 7vw, 96px); align-items: center; }
+  .path svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  .col { display: flex; flex-direction: column; gap: 10px; position: relative; z-index: 1; min-width: 0; }
+  .col h3 { font-size: .82rem; font-weight: 500; color: var(--ink-3); margin: 0 0 2px; }
+  .node { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; min-width: 0; }
+  .node .top { display: flex; align-items: center; gap: 9px; }
+  .node .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--idle); }
+  .node .lbl { font-weight: 600; font-size: .95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .node .state { margin-left: auto; font-size: .8rem; font-weight: 600; color: var(--ink-3); white-space: nowrap; }
+  .node .sub { color: var(--ink-2); font-size: .84rem; margin-top: 3px; min-height: 1.3em; overflow-wrap: anywhere; }
+  .node.on .dot { background: var(--ok); } .node.on .state { color: var(--ok); }
+  .node.rec .dot { background: var(--tally); } .node.rec .state { color: var(--tally); }
+  .node.bad { border-color: rgba(242,169,59,.5); } .node.bad .dot { background: var(--warn); } .node.bad .state { color: var(--warn); }
+  .node.hub { padding: 18px; text-align: left; border-color: var(--line-2); }
+  .node.hub .lbl { font-size: 1.15rem; }
+  .node.hub .sub { font-size: .9rem; }
+  .wire { fill: none; stroke: var(--line-2); stroke-width: 1.5; }
+  .wire.live { stroke: var(--ok); stroke-width: 2; stroke-dasharray: 5 7; animation: flow 1.1s linear infinite; }
+  @keyframes flow { to { stroke-dashoffset: -12; } }
+  .taps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+  .taps h3 { grid-column: 1 / -1; font-size: .82rem; font-weight: 500; color: var(--ink-3); margin: 0; }
+  .key { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 16px; font-size: .8rem; color: var(--ink-3); }
+  .key i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; }
+
+  /* Church Mac health */
+  .health { display: flex; flex-direction: column; gap: 0; }
+  .hrow { padding: 14px 0; border-top: 1px solid var(--line); }
+  .hrow:first-child { border-top: 0; padding-top: 0; }
+  .hrow .top { display: flex; align-items: baseline; gap: 10px; }
+  .hrow .lbl { font-weight: 600; }
+  .hrow .state { margin-left: auto; font-weight: 600; font-size: .9rem; color: var(--ink-3); }
+  .hrow.on .state { color: var(--ok); } .hrow.bad .state { color: var(--warn); }
+  .hrow .sub { color: var(--ink-2); font-size: .86rem; margin-top: 2px; }
+  .hrow .meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: .82rem; color: var(--ink-3); }
+  .hrow .meta b { color: var(--ink); font-weight: 500; }
+
+  /* Chart */
+  .chart { position: relative; }
   .chart svg { display: block; width: 100%; height: auto; }
-  .chart .tip { position: absolute; pointer-events: none; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; font: .78rem var(--mono); white-space: nowrap; display: none; z-index: 2; }
-  .chart .legend2 { display: flex; gap: 14px; font-size: .8rem; color: var(--muted); }
-  .chart .legend2 i { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 6px; border-radius: 2px; }
-  .chart .empty { font-size: .85rem; color: var(--muted); padding: 10px 0 4px; }
-  .tiles.rs { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin-top: 8px; }
-  .eq-head { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-top: 16px; }
-  .tile .meta { font: .78rem var(--mono); color: var(--muted); margin-top: 6px; line-height: 1.5; }
-  .tile .meta b { color: var(--fg); font-weight: 500; }
-  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .chart .tip { position: absolute; pointer-events: none; background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 10px; font-size: .8rem; white-space: nowrap; display: none; z-index: 2; }
+  .chart .lg { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .82rem; color: var(--ink-2); margin-bottom: 6px; }
+  .chart .lg i { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 7px; border-radius: 2px; }
+  .empty { color: var(--ink-3); font-size: .9rem; padding: 18px 0; }
 
-  /* Next service */
-  .next { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
-  .next .count { font: 600 2rem var(--mono); }
-  body.live-mode .next .count { font-size: 1.2rem; }
+  /* Run sheet timeline */
+  .steps { list-style: none; margin: 0; padding: 0; position: relative; }
+  .steps li { display: grid; grid-template-columns: 74px 18px minmax(0, 1fr); gap: 12px; align-items: start; padding: 0 0 16px; position: relative; }
+  .steps li::before { content: ""; position: absolute; left: 94px; top: 14px; bottom: -2px; width: 1px; background: var(--line); }
+  .steps li:last-child::before { display: none; }
+  .steps time { color: var(--ink-3); font-size: .88rem; text-align: right; padding-top: 1px; }
+  .steps .ic { width: 11px; height: 11px; margin: 5px 0 0 3px; border-radius: 50%; border: 1.5px solid var(--line-2); background: var(--surface); position: relative; z-index: 1; }
+  .steps .what { font-weight: 600; }
+  .steps .what small { display: block; font-weight: 400; color: var(--ink-2); font-size: .86rem; overflow-wrap: anywhere; margin-top: 1px; }
+  .steps li.done .ic { background: var(--idle); border-color: var(--idle); }
+  .steps li.done .what { color: var(--ink-2); }
+  .steps li.ok .ic { background: var(--ok); border-color: var(--ok); }
+  .steps li.warn .ic { background: var(--warn); border-color: var(--warn); } .steps li.warn small { color: var(--warn); }
+  .steps li.next .ic { border-color: var(--ink); box-shadow: 0 0 0 4px rgba(237,241,244,.12); }
+  .steps li.next time { color: var(--ink); }
+  .steps li.up .what { color: var(--ink-2); font-weight: 500; }
 
-  /* Run sheet */
-  .steps { list-style: none; margin: 0; padding: 0; }
-  .steps li { display: grid; grid-template-columns: 22px 72px 1fr; gap: 8px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--line); }
-  .steps li:first-child { border-top: 0; }
-  .steps .ic { text-align: center; }
-  .steps time { font: .85rem var(--mono); color: var(--muted); }
-  .steps .what small { display: block; color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
-  .steps li.up .what { color: var(--muted); }
-  .steps li.nextstep { background: var(--panel-2); margin: 0 -8px; padding-left: 8px; padding-right: 8px; border-radius: 6px; }
-  .steps li.nextstep .ic { color: var(--live); }
-  .steps li.warn .what { color: var(--warn); }
-
-  .grid2 { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); align-items: start; }
-  .feed { list-style: none; margin: 0; padding: 0; max-height: 380px; overflow: auto; }
-  .feed li { display: grid; grid-template-columns: 68px 1fr; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
-  .feed li:first-child { border-top: 0; }
-  .feed li.empty { display: block; color: var(--muted); font-size: .9rem; }
-  .feed time { font: .8rem var(--mono); color: var(--muted); padding-top: 2px; }
+  /* Alerts */
+  .feed { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow: auto; }
+  .feed li { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .feed li:first-child { border-top: 0; padding-top: 0; }
+  .feed time { color: var(--ink-3); font-size: .86rem; padding-top: 1px; }
   .feed .msg { overflow-wrap: anywhere; }
   .feed li.warn .msg { color: var(--warn); }
 
-  .links { display: flex; flex-wrap: wrap; gap: 8px; }
-  .links a { text-decoration: none; font-size: .88rem; padding: 7px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); }
-  .links a:hover { border-color: var(--muted); }
-  .links .sep { flex-basis: 100%; height: 0; }
-  .links .tag { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; flex-basis: 100%; margin-top: 4px; }
-
+  /* Prep table */
   .scroll { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
-  th { text-align: left; font-weight: 500; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-  td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  th { text-align: left; font-weight: 500; color: var(--ink-3); font-size: .82rem; padding: 0 10px 10px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 11px 10px 11px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
   tr:last-child td { border-bottom: 0; }
-  .pill { display: inline-block; font-size: .75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
-  .p-ok { color: var(--live); } .p-warn { color: var(--warn); } .p-muted { color: var(--muted); }
-  .dim { color: var(--muted); }
-  footer { color: var(--muted); font-size: .8rem; }
-  :focus-visible { outline: 2px solid var(--live); outline-offset: 2px; }
 
-  /* Section order: standby vs live */
-  #s-now { order: 1; } #s-status { order: 2; } #s-run { order: 3; } #s-next { order: 4; } #s-links { order: 5; } #s-bottom { order: 6; } footer { order: 10; }
-  body:not(.live-mode) #s-next { order: 1; } body:not(.live-mode) #s-links { order: 2; } body:not(.live-mode) #s-status { order: 3; } body:not(.live-mode) #s-run { order: 4; }
+  /* Links */
+  .links { display: flex; flex-wrap: wrap; gap: 8px; }
+  .links a { text-decoration: none; font-size: .9rem; font-weight: 500; padding: 8px 14px; border: 1px solid var(--line-2); border-radius: 999px; }
+  .links a:hover { background: var(--surface-2); border-color: var(--ink-3); }
+  .links .tag { flex-basis: 100%; font-size: .82rem; color: var(--ink-3); margin-top: 8px; }
+  .links .tag:first-child { margin-top: 0; }
 
-  @media (max-width: 760px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tiles.eq { grid-template-columns: minmax(0, 1fr); } }
-  @media (max-width: 600px) {
+  footer { color: var(--ink-3); font-size: .84rem; padding-top: 4px; }
+
+  /* Order: standby leads with prep, live leads with the run sheet */
+  #s-path { order: 1; } #s-mid { order: 2; } #s-ops { order: 3; } #s-week { order: 4; } footer { order: 10; }
+  body.live-mode #s-ops { order: 2; } body.live-mode #s-mid { order: 3; }
+
+  @media (prefers-reduced-motion: reduce) { .wire.live, .tally.live i { animation: none; } }
+  @media (max-width: 900px) {
+    .span-7, .span-5, .span-6 { grid-column: 1 / -1; }
+  }
+  @media (max-width: 720px) {
     body { font-size: 14px; }
+    .hero { grid-template-columns: minmax(0, 1fr); padding: 8px 0 22px; }
+    .clock { text-align: left; }
+    .panel { padding: 18px 16px; }
+    .path { grid-template-columns: minmax(0, 1fr); row-gap: 18px; }
+    .path svg.wires { display: none; }
+    .col.hub-col { padding-left: 0; }
+    .taps { grid-template-columns: minmax(0, 1fr); }
+    #rs-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    td:first-child { white-space: nowrap; }
     .hide-sm { display: none; }
-    .next .count { font-size: 1.6rem; }
-    .tile { padding: 10px 12px; } body.live-mode .tile { padding: 12px; } body.live-mode .tile .state { font-size: 1.2rem; }
+    .steps li { grid-template-columns: 62px 18px minmax(0, 1fr); }
+    .steps li::before { left: 82px; }
   }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <h1><small>Abundant Church</small>Stream Status</h1>
-    <span class="onair" id="onair">OFF AIR</span>
+  <div class="bar">
+    <div class="brand">Abundant Church <span>Stream</span></div>
+    <div class="tally" id="tally" role="status"><i></i><span id="tally-txt">Off air</span></div>
+  </div>
+
+  <header class="hero" aria-live="polite">
+    <div>
+      <p class="kicker" id="h-kicker">Next service</p>
+      <h1 id="h-title">—</h1>
+      <div class="sub" id="h-sub"></div>
+    </div>
+    <div class="clock">
+      <div class="big" id="h-clock">—</div>
+      <div class="cap" id="h-cap"></div>
+    </div>
+    <div class="then" id="h-then"></div>
   </header>
 
-  <section class="card now" id="s-now" aria-label="Now playing">
-    <div class="eyebrow" id="now-label">Now</div>
-    <div class="title" id="now-title">—</div>
-    <div class="stats">
-      <div class="stat"><span>Time live</span><b id="now-elapsed">—</b></div>
-      <div class="stat"><span>Scheduled end</span><b id="now-end">—</b></div>
-      <div class="stat"><span>Auto-stop in</span><b id="now-left">—</b></div>
+  <section class="panel" id="s-path" aria-label="Signal path">
+    <div class="ph"><h2>Signal path</h2><span class="note" id="fresh">Connecting…</span></div>
+    <div class="path" id="path">
+      <svg class="wires" id="wires" aria-hidden="true"></svg>
+      <div class="col" id="col-src">
+        <h3>Encoders</h3>
+        <div class="node" id="t-atem"><div class="top"><span class="dot"></span><span class="lbl">ATEM</span><span class="state">—</span></div><div class="sub">Primary</div></div>
+        <div class="node" id="t-obs"><div class="top"><span class="dot"></span><span class="lbl">OBS backup</span><span class="state">—</span></div><div class="sub"></div></div>
+      </div>
+      <div class="col hub-col">
+        <h3>Distribution</h3>
+        <div class="node hub" id="t-hub"><div class="top"><span class="dot"></span><span class="lbl">Restream</span><span class="state">—</span></div><div class="sub" id="hub-sub">Waiting for first report</div></div>
+      </div>
+      <div class="col" id="col-dest">
+        <h3>Destinations</h3>
+        <div id="rs-tiles" class="col"></div>
+      </div>
     </div>
-  </section>
-
-  <section class="card" id="s-status" aria-label="Live status">
-    <div class="head-row"><h2>Stream status</h2><span class="fresh" id="fresh">Connecting…</span></div>
-    <p class="note">From Companion: every minute while a service is live, every 15 minutes otherwise.</p>
-    <div class="tiles">
-      <div class="tile" id="t-atem"><div class="lbl">ATEM stream</div><div class="state">—</div><div class="sub"></div></div>
-      <div class="tile" id="t-obs"><div class="lbl">OBS backup</div><div class="state">—</div><div class="sub"></div></div>
-      <div class="tile" id="t-rec"><div class="lbl">OBS recording</div><div class="state">—</div><div class="sub"></div></div>
-      <div class="tile" id="t-sp"><div class="lbl">Spanish</div><div class="state">—</div><div class="sub"></div></div>
+    <div class="taps">
+      <h3>Recording and Spanish</h3>
+      <div class="node" id="t-rec"><div class="top"><span class="dot"></span><span class="lbl">OBS recording</span><span class="state">—</span></div><div class="sub"></div></div>
+      <div class="node" id="t-hd"><div class="top"><span class="dot"></span><span class="lbl">HyperDeck</span><span class="state">—</span></div><div class="sub"></div></div>
+      <div class="node" id="t-sp"><div class="top"><span class="dot"></span><span class="lbl">Spanish stream</span><span class="state">—</span></div><div class="sub"></div></div>
     </div>
-    <div class="eq-head">Upload rate <span class="dim" id="br-note" style="text-transform:none;letter-spacing:0"></span></div>
-    <div class="chart" id="br-chart"><div class="empty">Shows during services: OBS and ATEM upload rate, one point a minute.</div></div>
-    <div class="eq-head">Equipment</div>
-    <div class="tiles eq">
-      <div class="tile" id="t-obsapp"><div class="lbl">OBS app (church Mac)</div><div class="state">—</div><div class="sub"></div><div class="meta"></div></div>
-      <div class="tile" id="t-mac"><div class="lbl">Companion (church Mac)</div><div class="state">—</div><div class="sub"></div><div class="meta"></div></div>
-      <div class="tile" id="t-hd"><div class="lbl">HyperDeck recorder</div><div class="state">—</div><div class="sub"></div><div class="meta"></div></div>
-    </div>
-    <div class="eq-head">Restream destinations <span class="dim" id="rs-fresh" style="text-transform:none;letter-spacing:0"></span></div>
-    <div class="tiles rs" id="rs-tiles"><div class="tile"><div class="lbl">Restream</div><div class="state">—</div><div class="sub">Waiting for first report</div></div></div>
-    <div class="legend"><span><i style="background:var(--live)"></i>Running</span><span><i style="background:var(--rec)"></i>Recording</span><span><i style="background:var(--warn)"></i>Should be on</span><span><i style="background:var(--off)"></i>Off (not needed now)</span></div>
+    <div class="key"><span><i style="background:var(--ok)"></i>Running</span><span><i style="background:var(--tally)"></i>Recording</span><span><i style="background:var(--warn)"></i>Needs attention</span><span><i style="background:var(--idle)"></i>Idle, not needed now</span></div>
   </section>
 
-  <section class="card" id="s-run" aria-label="Run sheet">
-    <div class="head-row"><h2 id="run-title">Run sheet</h2><span class="fresh" id="run-next"></span></div>
-    <p class="note">What Companion does, step by step. Checked off as each step's time passes or its alert arrives.</p>
-    <ol class="steps" id="steps"></ol>
-  </section>
-
-  <section class="card" id="s-next" aria-label="Next service">
-    <div class="next"><span class="dim">Next service</span><strong id="next-name">—</strong><span class="count" id="next-count">—</span></div>
-    <div class="dim" id="next-title" style="margin-top:4px"></div>
-  </section>
-
-  <section class="card" id="s-links" aria-label="Quick links">
-    <div class="head-row"><h2>Quick links</h2><span class="fresh" id="links-for"></span></div>
-    <p class="note">This week's message and the places the stream goes.</p>
-    <div class="links" id="links"></div>
-  </section>
-
-  <div class="grid2" id="s-bottom">
-    <section class="card">
-      <h2>Alerts</h2>
-      <p class="note">Messages from Companion, newest first (last 12 hours).</p>
-      <ul class="feed" id="feed"><li class="empty">No alerts in the last 12 hours.</li></ul>
+  <div class="grid" id="s-mid">
+    <section class="panel span-7" aria-label="Upload rate">
+      <div class="ph"><h2>Upload rate</h2><span class="note" id="br-note">Last 2½ hours</span></div>
+      <div class="chart" id="br-chart"><div class="empty">Appears during services, one point a minute.</div></div>
     </section>
-    <section class="card">
-      <h2>This week's prep</h2>
-      <p class="note" id="prep-note">What's set up for each service.</p>
-      <div class="scroll">
-        <table>
-          <thead><tr><th>Date</th><th>Service</th><th class="hide-sm">Message</th><th>Status</th></tr></thead>
-          <tbody id="prep"></tbody>
-        </table>
+    <section class="panel span-5" aria-label="Church Mac">
+      <div class="ph"><h2>Church Mac</h2><span class="note" id="mac-note"></span></div>
+      <div class="health">
+        <div class="hrow" id="t-obsapp"><div class="top"><span class="lbl">OBS</span><span class="state">—</span></div><div class="sub"></div><div class="meta"></div></div>
+        <div class="hrow" id="t-mac"><div class="top"><span class="lbl">Companion</span><span class="state">—</span></div><div class="sub"></div><div class="meta"></div></div>
       </div>
     </section>
   </div>
 
-  <footer id="foot">Phone alerts remain the primary notice. This page is a convenience view.</footer>
+  <div class="grid" id="s-ops">
+    <section class="panel span-6" aria-label="Run sheet">
+      <div class="ph"><h2 id="run-title">Run sheet</h2><span class="note" id="run-next"></span></div>
+      <ol class="steps" id="steps"></ol>
+    </section>
+    <section class="panel span-6" aria-label="Alerts">
+      <div class="ph"><h2>Alerts</h2><span class="note">Last 12 hours</span></div>
+      <ul class="feed" id="feed"><li class="empty">No alerts in the last 12 hours.</li></ul>
+    </section>
+  </div>
+
+  <div class="grid" id="s-week">
+    <section class="panel span-7" aria-label="This week">
+      <div class="ph"><h2>This week</h2><span class="note" id="prep-note"></span></div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Date</th><th>Service</th><th class="hide-sm">Message</th><th>Setup</th></tr></thead>
+          <tbody id="prep"></tbody>
+        </table>
+      </div>
+    </section>
+    <section class="panel span-5" aria-label="Links">
+      <div class="ph"><h2>Links</h2></div>
+      <div class="links" id="links"></div>
+    </section>
+  </div>
+
+  <footer>Phone alerts are the primary notice. This page updates every minute during services and every 15 minutes otherwise.</footer>
 </div>
 
 <script>
@@ -216,36 +287,38 @@
   var TZ = 'America/Denver';
 
   function hm(h, m) { return h * 60 + m; }
-  // Each service: day (0=Sun), start minute, end minute, label, prep key, spanish?, steps [minute, name, detail]
   var SERVICES = [
     { day: 0, start: hm(9,0), end: hm(10,25), label: 'Sunday 9:00 am', key: 'sun9', spanish: true, steps: [
-      [hm(8,30), 'Health check', 'ATEM, OBS and Spanish OBS connected'],
-      [hm(8,50), 'Go live', 'ATEM stream + record, OBS record; OBS stream 1 min later'],
-      [hm(8,52), 'Spanish go live', 'Reload Restream pull, start Spanish stream at 8:55'],
+      [hm(8,30), 'Health check', 'Encoders connected, Restream destinations on, disk space'],
+      [hm(8,50), 'Go live', 'ATEM streams, OBS records; OBS backup streams a minute later'],
+      [hm(8,52), 'Spanish go live', 'Reload the Restream pull, Spanish stream starts at 8:55'],
       [hm(9,0), 'Live check', 'Everything streaming and recording'],
-      [hm(10,25), 'End', 'Fade to still, stop everything. Then turn KTSM off in Restream']] },
+      [hm(10,25), 'End', 'Fade to still, stop everything'],
+      [hm(10,35), 'KTSM check', 'Alerts if KTSM is still on in Restream']] },
     { day: 0, start: hm(10,45), end: hm(12,10), label: 'Sunday 10:45 am', key: 'sun1045', spanish: false, steps: [
-      [hm(10,15), 'Health check', 'ATEM and OBS connected'],
-      [hm(10,35), 'Go live', 'ATEM stream + record, OBS record; OBS stream 1 min later'],
+      [hm(10,15), 'Health check', 'Encoders connected, Restream destinations on, disk space'],
+      [hm(10,35), 'Go live', 'ATEM streams, OBS records; OBS backup streams a minute later'],
       [hm(10,40), 'Live check', 'Everything streaming and recording'],
       [hm(12,10), 'End', 'Fade to still, stop streaming and recording']] },
     { day: 0, start: hm(12,30), end: hm(14,0), label: 'Sunday 12:30 pm', key: 'sun1230', spanish: false, steps: [
-      [hm(12,0), 'Health check', 'ATEM and OBS connected'],
-      [hm(12,20), 'Go live', 'ATEM stream + record, OBS record; OBS stream 1 min later'],
+      [hm(12,0), 'Health check', 'Encoders connected, Restream destinations on, disk space'],
+      [hm(12,20), 'Go live', 'ATEM streams, OBS records; OBS backup streams a minute later'],
       [hm(12,25), 'Live check', 'Everything streaming and recording'],
       [hm(14,0), 'End', 'Fade to still, stop streaming and recording'],
-      [hm(14,5), 'Wrap-up', 'Confirm everything stopped. Turn Restream channels off']] },
+      [hm(14,5), 'Wrap-up', 'Confirm everything stopped'],
+      [hm(14,10), 'Destinations off', 'Turn Restream destinations off; alerts if any are still on']] },
     { day: 3, start: hm(18,30), end: hm(20,0), label: 'Wednesday 6:30 pm', key: 'wed', spanish: true, steps: [
-      [hm(18,0), 'Health check', 'ATEM, OBS and Spanish OBS connected'],
-      [hm(18,20), 'Go live', 'ATEM stream + record, OBS record; OBS stream 1 min later'],
-      [hm(18,22), 'Spanish go live', 'Reload Restream pull, start Spanish stream at 6:25'],
+      [hm(18,0), 'Health check', 'Encoders connected, Restream destinations on, disk space'],
+      [hm(18,20), 'Go live', 'ATEM streams, OBS records; OBS backup streams a minute later'],
+      [hm(18,22), 'Spanish go live', 'Reload the Restream pull, Spanish stream starts at 6:25'],
       [hm(18,30), 'Live check', 'Everything streaming and recording'],
       [hm(20,0), 'End', 'Fade to still, stop everything'],
-      [hm(20,5), 'Wrap-up', 'Confirm everything stopped. Turn Restream channels off']] },
+      [hm(20,5), 'Wrap-up', 'Confirm everything stopped'],
+      [hm(20,10), 'Destinations off', 'Turn Restream destinations off; alerts if any are still on']] },
     { day: 6, start: hm(17,0), end: hm(18,30), label: 'Saturday 5:00 pm replay', key: 'sat', spanish: false, replay: true, steps: [
       [hm(16,50), 'Replay starts', 'Restream plays Wednesday\'s recording'],
       [hm(17,0), 'Service time', 'Replay is on air'],
-      [hm(18,30), 'Replay ends', 'Turn Restream channels off afterward']] }
+      [hm(18,30), 'Replay ends', 'Turn Restream destinations off afterward']] }
   ];
 
   var lastStatus = null, lastStatusTime = 0, alerts = [], prep = null, rs = null, rsTime = 0;
@@ -262,19 +335,23 @@
     return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
   }
   function clock(min) { var h = Math.floor(min / 60), m = min % 60, ap = h >= 12 ? 'pm' : 'am'; h = h % 12 || 12; return h + ':' + String(m).padStart(2, '0') + ' ' + ap; }
-  function fmtTs(ts) { return new Date(ts * 1000).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }); }
+  function fmtTs(ts) { return new Date(ts * 1000).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).replace(/\s?([AP])M/, function (m, a) { return ' ' + a.toLowerCase() + 'm'; }); }
   function dur(sec) { sec = Math.max(0, Math.floor(sec)); var h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0'); }
   function ago(ts) { var s = Math.round(Date.now() / 1000 - ts); if (s < 60) return s + ' s ago'; var m = Math.round(s / 60); return m < 60 ? m + ' min ago' : Math.round(m / 60) + ' h ago'; }
+  function num(v) { var n = parseFloat(v); return isNaN(n) ? null : n; }
 
-  // The service whose run sheet window (first step − 30 min to end + 30 min) contains now; else the next one.
   function activeService() {
     var n = nowDenver(), m = n.sec / 60;
     var cur = SERVICES.find(function (s) { return s.day === n.day && m >= s.steps[0][0] - 30 && m < s.end + 30; });
     if (cur) return { s: cur, daysAway: 0, current: true };
-    var best = null;
+    return nextAfter(null);
+  }
+  function nextAfter(skip) {
+    var n = nowDenver(), m = n.sec / 60, best = null;
     SERVICES.forEach(function (s) {
+      if (s === skip) return;
       var d = (s.day - n.day + 7) % 7, diff = d * 1440 + s.start - m;
-      if (diff < 0) { diff += 7 * 1440; d += 7; }
+      if (diff <= 0) { diff += 7 * 1440; d += 7; }
       if (!best || diff < best.diff) best = { s: s, diff: diff, daysAway: d };
     });
     return { s: best.s, daysAway: best.daysAway, current: false, diffMin: best.diff };
@@ -288,114 +365,172 @@
     var date = denverDateStr(daysAway);
     return prep.services.find(function (p) { return p.key === s.key && p.date === date; }) || null;
   }
+  function pillClass(v) { return ({ 'Done': 'p-muted', 'Ready': 'p-ok', 'Needs info': 'p-warn', 'Needs upload': 'p-warn', 'Not set': 'p-warn' })[v] || 'p-muted'; }
+  function pill(v) { var sp = document.createElement('span'); sp.className = 'pill ' + pillClass(v); sp.textContent = v; return sp; }
 
+  // Nodes keep the same id + class vocabulary as before: on / rec / bad / (idle)
   function setTile(id, cls, state, sub) {
-    var el = $(id); el.className = 'tile' + (cls ? ' ' + cls : '');
+    var el = $(id); el.className = (el.classList.contains('hub') ? 'node hub' : el.classList.contains('hrow') ? 'hrow' : 'node') + (cls ? ' ' + cls : '');
     el.querySelector('.state').textContent = state; el.querySelector('.sub').textContent = sub || '';
   }
+  function cap(s) { return s.charAt(0) + s.slice(1).toLowerCase(); }
 
+  var live = false, stale = false;
   function renderStatus() {
     var s = lastStatus, win = inServiceWindow();
-    var live = s && s.live === '1';
-    var stale = live && Date.now() / 1000 - lastStatusTime > 180;
-    var onair = $('onair');
-    onair.className = 'onair' + (live ? (stale ? ' stale' : ' live') : '');
-    onair.textContent = live ? (stale ? 'NO UPDATE' : 'ON AIR') : (win && win.replay ? 'REPLAY' : 'OFF AIR');
+    live = !!(s && s.live === '1');
+    stale = live && Date.now() / 1000 - lastStatusTime > 180;
+    var t = $('tally');
+    t.className = 'tally' + (live ? (stale ? ' stale' : ' live') : (win && win.replay ? ' replay' : ''));
+    text('tally-txt', live ? (stale ? 'No update' : 'On air') : (win && win.replay ? 'Replay' : 'Off air'));
     var fr = $('fresh');
     fr.textContent = lastStatusTime ? 'Updated ' + ago(lastStatusTime) : 'No status yet';
-    fr.className = 'fresh' + (stale ? ' stale' : '');
+    fr.className = 'note' + (stale ? ' stale' : '');
     document.body.classList.toggle('live-mode', !!(live || win));
 
     if (!s) { ['t-atem','t-obs','t-rec','t-sp'].forEach(function (id) { setTile(id, '', '—', 'Waiting for first report'); }); return; }
-    var check = live && !stale;
-    var spExpected = win ? win.spanish : false;
-    var atemOn = s.atem_stream === true || s.atem_stream === 'true';
-    var cache = parseFloat(s.atem_cache) || 0;
-    if (s.atem_conn && s.atem_conn !== 'good') setTile('t-atem', 'bad', 'NOT CONNECTED', 'Companion can\'t reach the ATEM');
-    else setTile('t-atem', atemOn ? (cache > 10 ? 'bad' : 'on') : (check ? 'bad' : ''), atemOn ? 'LIVE' : 'OFF', atemOn ? s.atem_time + (cache > 10 ? ' · buffer ' + Math.round(cache) + '%: internet not keeping up' : '') : (check ? 'Should be on' : 'Not needed now'));
+    var check = live && !stale, spExpected = win ? win.spanish : false;
+    var atemOn = s.atem_stream === true || s.atem_stream === 'true', cache = parseFloat(s.atem_cache) || 0;
+    if (s.atem_conn && s.atem_conn !== 'good') setTile('t-atem', 'bad', 'Not connected', 'Companion can\'t reach the ATEM');
+    else setTile('t-atem', atemOn ? (cache > 10 ? 'bad' : 'on') : (check ? 'bad' : ''), atemOn ? 'Live' : 'Off',
+      atemOn ? s.atem_time + (cache > 10 ? ', buffer ' + Math.round(cache) + '%: internet not keeping up' : '') : (check ? 'Should be streaming' : 'Primary'));
     var obsOn = s.obs_stream && s.obs_stream !== 'Off-Air';
-    if (s.obs_conn && s.obs_conn !== 'good') setTile('t-obs', 'bad', 'NOT CONNECTED', 'Companion can\'t reach OBS');
-    else setTile('t-obs', obsOn ? 'on' : (check ? 'bad' : ''), obsOn ? 'LIVE' : 'OFF', obsOn ? s.obs_time + ' · ' + s.kbps + ' kbps' : (check ? 'Should be on' : 'Not needed now'));
+    if (s.obs_conn && s.obs_conn !== 'good') setTile('t-obs', 'bad', 'Not connected', 'Companion can\'t reach OBS');
+    else setTile('t-obs', obsOn ? 'on' : (check ? 'bad' : ''), obsOn ? 'Live' : 'Off', obsOn ? s.obs_time + ', ' + (Math.round(s.kbps / 100) / 10) + ' Mbps' : (check ? 'Should be streaming' : 'Backup'));
     var recOn = s.obs_rec && s.obs_rec !== 'Stopped';
-    setTile('t-rec', recOn ? 'rec' : (check ? 'bad' : ''), recOn ? 'REC' : 'STOPPED', recOn ? s.obs_rec_time : (check ? 'Should be recording' : 'Not needed now'));
+    setTile('t-rec', recOn ? 'rec' : (check ? 'bad' : ''), recOn ? 'Rec' : 'Stopped', recOn ? s.obs_rec_time : (check ? 'Should be recording' : 'Not needed now'));
     var spOn = s.spanish && s.spanish !== 'Off-Air';
-    if (s.sp_conn && s.sp_conn !== 'good') setTile('t-sp', check && spExpected ? 'bad' : '', check && spExpected ? 'NOT CONNECTED' : 'MAC OFF', check && spExpected ? 'Companion can\'t reach the Spanish Mac' : 'Spanish Mac not connected (fine outside services)');
-    else setTile('t-sp', spOn ? 'on' : (check && spExpected ? 'bad' : ''), spOn ? 'LIVE' : 'OFF', spOn ? s.spanish_time : (check && spExpected ? 'Should be on' : (live ? 'No Spanish this service' : 'Not needed now')));
+    if (s.sp_conn && s.sp_conn !== 'good') setTile('t-sp', check && spExpected ? 'bad' : '', check && spExpected ? 'Not connected' : 'Mac off', check && spExpected ? 'Companion can\'t reach the Spanish Mac' : 'Fine outside services');
+    else setTile('t-sp', spOn ? 'on' : (check && spExpected ? 'bad' : ''), spOn ? 'Live' : 'Off', spOn ? s.spanish_time : (check && spExpected ? 'Should be streaming' : (live ? 'No Spanish this service' : 'Not needed now')));
   }
 
-  // Equipment tiles. Thresholds for "restart suggested" are rules of thumb, not hard limits.
   var RESTART_DAYS = 3, RAM_WARN_MB = 3000, CPU_WARN = 60, DISK_WARN_MB = 20000, HEARD_WARN = 20 * 60;
   function days(sec) { sec = Math.max(0, sec); var d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60); return d ? d + 'd ' + h + 'h' : (h ? h + 'h ' + m + 'm' : m + 'm'); }
   function since(ts) { return new Date(ts * 1000).toLocaleString('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: '2-digit' }); }
-  function setMeta(id, html) { $(id).querySelector('.meta').innerHTML = html; }
-  function num(v) { var n = parseFloat(v); return isNaN(n) ? null : n; }
+  function setMeta(id, items) {
+    var box = $(id).querySelector('.meta'); box.replaceChildren();
+    items.forEach(function (it) { var sp = document.createElement('span'); sp.append(it[0] ? it[0] + ' ' : ''); var b = document.createElement('b'); b.textContent = it[1]; sp.append(b); if (it[2]) sp.append(' ' + it[2]); box.append(sp); });
+  }
   function renderEquipment() {
     var s = lastStatus, now = Date.now() / 1000;
-    var hasEq = s && s.t !== undefined;
-    if (!hasEq) {
-      setTile('t-obsapp', '', '—', 'Waiting for first report'); setMeta('t-obsapp', '');
-      setTile('t-mac', '', '—', 'Waiting for first report'); setMeta('t-mac', '');
+    if (!(s && s.t !== undefined)) {
+      setTile('t-obsapp', '', '—', 'Waiting for first report'); setMeta('t-obsapp', []);
+      setTile('t-mac', '', '—', 'Waiting for first report'); setMeta('t-mac', []);
     } else {
       var heard = now - lastStatusTime, quiet = heard > HEARD_WARN;
       var conn = s.obs_conn === 'good', start = num(s.obs_since), up = start ? now - start : 0;
-      var cpu = num(s.cpu), mem = num(s.mem), disk = num(s.disk_mb);
-      var reasons = [];
+      var cpu = num(s.cpu), mem = num(s.mem), disk = num(s.disk_mb), reasons = [];
       if (conn && up >= RESTART_DAYS * 86400) reasons.push('running ' + days(up));
       if (conn && mem !== null && mem >= RAM_WARN_MB) reasons.push('high memory');
       if (conn && cpu !== null && cpu >= CPU_WARN) reasons.push('high CPU');
-      if (quiet) {
-        setTile('t-obsapp', 'bad', 'NO UPDATE', 'Last report ' + ago(lastStatusTime) + '. Companion or the Mac may be off');
-      } else if (!conn) {
-        setTile('t-obsapp', 'bad', 'NOT RUNNING', 'Companion can\'t reach OBS. Open OBS on the church Mac');
-      } else {
-        setTile('t-obsapp', reasons.length ? 'bad' : 'on', 'UP ' + days(up), reasons.length ? 'Restart suggested before next service (' + reasons.join(', ') + ')' : 'Running since ' + since(start));
-      }
+      if (quiet) setTile('t-obsapp', 'bad', 'No update', 'Last report ' + ago(lastStatusTime) + '. Companion or the Mac may be off');
+      else if (!conn) setTile('t-obsapp', 'bad', 'Not running', 'Companion can\'t reach OBS. Open OBS on the church Mac');
+      else setTile('t-obsapp', reasons.length ? 'bad' : 'on', 'Up ' + days(up), reasons.length ? 'Restart suggested before the next service (' + reasons.join(', ') + ')' : 'Running since ' + since(start));
       var meta = [];
       if (conn) {
-        if (cpu !== null) meta.push('CPU <b>' + Math.round(cpu) + '%</b>');
-        if (mem !== null) meta.push('RAM <b>' + (mem >= 1024 ? (mem / 1024).toFixed(1) + ' GB' : Math.round(mem) + ' MB') + '</b>');
-        if (s.fps) meta.push('<b>' + Math.round(num(s.fps) || 0) + '</b> fps');
-        if (disk !== null) meta.push('Disk <b>' + Math.round(disk / 1024) + ' GB</b> free' + (disk < DISK_WARN_MB ? ' ⚠️' : ''));
-        if (s.skipped) meta.push('Skipped frames <b>' + s.skipped + '</b>');
+        if (cpu !== null) meta.push(['CPU', Math.round(cpu) + '%']);
+        if (mem !== null) meta.push(['Memory', mem >= 1024 ? (mem / 1024).toFixed(1) + ' GB' : Math.round(mem) + ' MB']);
+        if (s.fps) meta.push(['', Math.round(num(s.fps) || 0), 'fps']);
+        if (disk !== null) meta.push(['Disk', Math.round(disk / 1024) + ' GB', 'free' + (disk < DISK_WARN_MB ? ', low' : '')]);
+        if (s.skipped) meta.push(['Skipped frames', s.skipped]);
       }
-      setMeta('t-obsapp', meta.join(' · '));
-      var cup = num(s.comp_up), t = num(s.t);
-      var cnow = cup !== null && t ? cup + (now - t) : null;
-      if (quiet) setTile('t-mac', 'bad', 'NO UPDATE', 'Last report ' + ago(lastStatusTime));
-      else setTile('t-mac', 'on', cnow !== null ? 'UP ' + days(cnow) : 'UP', cnow !== null ? 'Running since ' + since(now - cnow) : '');
-      setMeta('t-mac', 'Restarts with the Mac. Last report <b>' + ago(lastStatusTime) + '</b>');
+      setMeta('t-obsapp', meta);
+      var cup = num(s.comp_up), t = num(s.t), cnow = cup !== null && t ? cup + (now - t) : null;
+      if (quiet) setTile('t-mac', 'bad', 'No update', 'Last report ' + ago(lastStatusTime));
+      else setTile('t-mac', 'on', cnow !== null ? 'Up ' + days(cnow) : 'Up', cnow !== null ? 'Running since ' + since(now - cnow) + '. Restarts with the Mac' : '');
+      setMeta('t-mac', []);
+      text('mac-note', 'Last report ' + ago(lastStatusTime));
     }
     if (s && s.hd_conn !== undefined) {
       var hdOk = s.hd_conn === 'good', rec = /^record/i.test(s.hd_status || '');
       var ssd = s.hd_slot && !/^(-|none|empty|)$/i.test(s.hd_slot.trim());
-      var liveNow = s.live === '1' && now - lastStatusTime <= 180;
-      if (now - lastStatusTime > HEARD_WARN) setTile('t-hd', 'bad', 'NO UPDATE', 'Last report ' + ago(lastStatusTime));
-      else if (!hdOk) setTile('t-hd', 'bad', 'OFFLINE', 'Companion can\'t reach the HyperDeck');
-      else if (!ssd) setTile('t-hd', 'bad', 'NO SSD', 'No SSD detected in the HyperDeck');
-      else if (rec) setTile('t-hd', 'rec', 'REC', 'Recording to ' + s.hd_slot);
-      else setTile('t-hd', liveNow ? 'bad' : '', liveNow ? 'NOT RECORDING' : 'READY', liveNow ? 'SSD ' + s.hd_slot + ' is in, but not recording' : 'SSD ' + s.hd_slot + ' is in');
-      setMeta('t-hd', ssd && hdOk ? 'Recording time left <b>' + s.hd_remaining + '</b>' + (s.hd_status && !rec ? ' · Status <b>' + s.hd_status + '</b>' : '') : '');
-    } else {
-      setTile('t-hd', '', '—', 'Waiting for first report'); setMeta('t-hd', '');
-    }
+      var liveNow = s.live === '1' && now - lastStatusTime <= 180, left = ssd && hdOk && s.hd_remaining ? ', ' + s.hd_remaining + ' left' : '';
+      if (now - lastStatusTime > HEARD_WARN) setTile('t-hd', 'bad', 'No update', 'Last report ' + ago(lastStatusTime));
+      else if (!hdOk) setTile('t-hd', 'bad', 'Offline', 'Companion can\'t reach the HyperDeck');
+      else if (!ssd) setTile('t-hd', 'bad', 'No SSD', 'No SSD detected');
+      else if (rec) setTile('t-hd', 'rec', 'Rec', 'Recording to ' + s.hd_slot + left);
+      else setTile('t-hd', liveNow ? 'bad' : '', liveNow ? 'Not recording' : 'Ready', (liveNow ? 'SSD in, but not recording' : 'SSD ' + s.hd_slot) + left);
+    } else setTile('t-hd', '', '—', 'Waiting for first report');
   }
 
-  // Upload-rate chart: last 150 minutes of points where an encoder was streaming. One axis (Mbps).
+  function renderRestream() {
+    var box = $('rs-tiles'), stale5 = rsTime && Date.now() / 1000 - rsTime > 5 * 60;
+    if (!rs) { renderHub(); return; }
+    box.replaceChildren();
+    if (!rs.ok || stale5) {
+      var d = document.createElement('div'); d.className = 'node bad';
+      d.innerHTML = '<div class="top"><span class="dot"></span><span class="lbl">Restream</span><span class="state"></span></div><div class="sub"></div>';
+      d.querySelector('.state').textContent = stale5 ? 'No update' : 'Can\'t read';
+      d.querySelector('.sub').textContent = stale5 ? 'Last report ' + ago(rsTime) : 'Restream status needs reconnecting. Streaming is not affected.';
+      box.appendChild(d); renderHub(); return;
+    }
+    rs.channels.forEach(function (c) {
+      var d = document.createElement('div'); d.className = 'node dest' + (c.enabled ? ' on' : '');
+      d.innerHTML = '<div class="top"><span class="dot"></span><span class="lbl"></span><span class="state"></span></div><div class="sub"></div>';
+      var custom = /custom/i.test(c.platform), plat = c.platform.replace(/^Youtube$/, 'YouTube');
+      d.querySelector('.lbl').textContent = custom ? c.name : plat;
+      d.querySelector('.state').textContent = c.enabled ? 'On' : 'Off';
+      d.querySelector('.sub').textContent = custom ? 'Custom RTMP' : c.name;
+      d.dataset.on = c.enabled ? '1' : '';
+      box.appendChild(d);
+    });
+    renderHub();
+  }
+  function renderHub() {
+    var hub = $('t-hub');
+    if (!rs) { setTile('t-hub', '', '—', 'Waiting for first report'); drawWires(); return; }
+    var stale5 = Date.now() / 1000 - rsTime > 5 * 60;
+    if (!rs.ok || stale5) { setTile('t-hub', 'bad', stale5 ? 'No update' : 'Can\'t read', 'Destination status unavailable'); drawWires(); return; }
+    var on = rs.channels.filter(function (c) { return c.enabled; }).length, n = rs.channels.length;
+    var feeding = live && !stale && ($('t-atem').classList.contains('on') || $('t-obs').classList.contains('on'));
+    setTile('t-hub', feeding ? 'on' : '', feeding ? 'Receiving' : 'Standby', on + ' of ' + n + ' destinations on');
+    drawWires();
+  }
+
+  // Wires: curves from each encoder into Restream, and from Restream out to each destination.
+  function drawWires() {
+    var svg = $('wires'), path = $('path');
+    if (getComputedStyle(svg).display === 'none') return;
+    var pr = path.getBoundingClientRect(), hub = $('t-hub').getBoundingClientRect();
+    function rel(r) { return { l: r.left - pr.left, r: r.right - pr.left, y: r.top - pr.top + r.height / 2 }; }
+    var h = rel(hub), out = '';
+    function curve(a, b, live) {
+      var mx = (a.x + b.x) / 2;
+      out += '<path class="wire' + (live ? ' live' : '') + '" d="M' + a.x.toFixed(1) + ' ' + a.y.toFixed(1) + ' C' + mx.toFixed(1) + ' ' + a.y.toFixed(1) + ' ' + mx.toFixed(1) + ' ' + b.y.toFixed(1) + ' ' + b.x.toFixed(1) + ' ' + b.y.toFixed(1) + '"/>';
+    }
+    ['t-atem', 't-obs'].forEach(function (id) {
+      var el = $(id), r = rel(el.getBoundingClientRect());
+      curve({ x: r.r, y: r.y }, { x: h.l, y: h.y }, live && !stale && el.classList.contains('on'));
+    });
+    var feeding = $('t-hub').classList.contains('on');
+    document.querySelectorAll('#rs-tiles .node').forEach(function (el) {
+      var r = rel(el.getBoundingClientRect());
+      curve({ x: h.r, y: h.y }, { x: r.l, y: r.y }, feeding && el.dataset.on === '1');
+    });
+    svg.innerHTML = out;
+  }
+
+  // Upload-rate chart: one axis (Mbps), last 150 minutes.
   var C_OBS = '#3987e5', C_ATEM = '#d95926';
   function renderChart() {
     var box = $('br-chart'), now = Date.now() / 1000;
     var pts = hist.filter(function (p) { return p.t > now - 150 * 60 && (p.obs !== null || p.atem !== null); });
-    var note = $('br-note');
-    if (pts.length < 2) { box.innerHTML = '<div class="empty">Shows during services: OBS and ATEM upload rate, one point a minute.</div>'; note.textContent = ''; return; }
-    var W = Math.max(300, box.clientWidth || 600), H = 170, L = 30, R = 64, T = 10, B = 22;
+    if (pts.length < 2) { box.innerHTML = '<div class="empty">Appears during services, one point a minute.</div>'; text('br-note', 'Last 2½ hours'); return; }
+    var W = Math.max(300, box.clientWidth || 600), H = 190, L = 28, R = 70, T = 10, B = 24;
     var t0 = pts[0].t, t1 = Math.max(pts[pts.length - 1].t, t0 + 600);
     var max = 0; pts.forEach(function (p) { max = Math.max(max, p.obs || 0, p.atem || 0); });
     var top = Math.max(8, Math.ceil(max * 1.2 / 2) * 2), step = top <= 10 ? 2 : (top <= 20 ? 5 : 10);
     var x = function (t) { return L + (t - t0) / (t1 - t0) * (W - L - R); }, y = function (v) { return T + (1 - v / top) * (H - T - B); };
-    var g = '';
-    for (var v = 0; v <= top; v += step) g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(--line)" stroke-width="1"/><text x="' + (L - 6) + '" y="' + (y(v) + 4) + '" text-anchor="end" fill="var(--muted)" font-size="10">' + v + '</text>';
-    var clock = function (t) { return new Date(t * 1000).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }); };
-    g += '<text x="' + L + '" y="' + (H - 6) + '" fill="var(--muted)" font-size="10">' + clock(t0) + '</text><text x="' + (W - R) + '" y="' + (H - 6) + '" text-anchor="end" fill="var(--muted)" font-size="10">' + clock(t1) + '</text>';
+    var g = '', f = 'font-family="Hanken Grotesk, system-ui, sans-serif"';
+    for (var v = 0; v <= top; v += step) g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(--line)" stroke-width="1"/><text ' + f + ' x="' + (L - 8) + '" y="' + (y(v) + 4) + '" text-anchor="end" fill="var(--ink-3)" font-size="11">' + v + '</text>';
+    var ck = fmtTs;
+    g += '<text ' + f + ' x="' + L + '" y="' + (H - 6) + '" fill="var(--ink-3)" font-size="11">' + ck(t0) + '</text><text ' + f + ' x="' + (W - R) + '" y="' + (H - 6) + '" text-anchor="end" fill="var(--ink-3)" font-size="11">' + ck(t1) + '</text>';
+    var ends = {};
+    ['atem', 'obs'].forEach(function (k) { for (var i = pts.length - 1; i >= 0; i--) if (pts[i][k] !== null) { ends[k] = y(pts[i][k]); break; } });
+    if (ends.atem !== undefined && ends.obs !== undefined && Math.abs(ends.atem - ends.obs) < 13) {
+      var mid = (ends.atem + ends.obs) / 2, up = ends.atem <= ends.obs ? 'atem' : 'obs', dn = up === 'atem' ? 'obs' : 'atem';
+      ends[up] = mid - 6.5; ends[dn] = mid + 6.5;
+    }
     function line(key, col, label) {
       var d = '', pen = false, lastP = null;
       pts.forEach(function (p, i) {
@@ -405,144 +540,117 @@
       });
       if (!d) return '';
       return '<path d="' + d + '" fill="none" stroke="' + col + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' +
-        '<text x="' + (x(lastP.t) + 6) + '" y="' + (y(lastP[key]) + 4) + '" fill="var(--fg)" font-size="10">' + label + ' ' + lastP[key].toFixed(1) + '</text>';
+        '<text ' + f + ' x="' + (x(lastP.t) + 8) + '" y="' + (ends[key] + 4) + '" fill="var(--ink)" font-size="11">' + label + ' ' + lastP[key].toFixed(1) + '</text>';
     }
     g += line('atem', C_ATEM, 'ATEM') + line('obs', C_OBS, 'OBS');
-    g += '<line id="br-x" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--muted)" stroke-width="1" visibility="hidden"/><rect id="br-hit" x="' + L + '" y="0" width="' + (W - L - R) + '" height="' + H + '" fill="transparent"/>';
-    box.innerHTML = '<div class="legend2"><span><i style="background:' + C_ATEM + '"></i>ATEM (primary)</span><span><i style="background:' + C_OBS + '"></i>OBS (backup)</span><span style="margin-left:auto">Mbps</span></div>' +
+    g += '<line id="br-x" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--ink-3)" stroke-width="1" visibility="hidden"/><rect id="br-hit" x="' + L + '" y="0" width="' + (W - L - R) + '" height="' + H + '" fill="transparent"/>';
+    box.innerHTML = '<div class="lg"><span><i style="background:' + C_ATEM + '"></i>ATEM, primary</span><span><i style="background:' + C_OBS + '"></i>OBS, backup</span><span style="margin-left:auto">Mbps</span></div>' +
       '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Upload rate of the ATEM and OBS streams over the last two and a half hours">' + g + '</svg><div class="tip"></div>';
     var last = pts[pts.length - 1];
-    note.textContent = last.cache > 10 ? '· ⚠️ ATEM buffer ' + Math.round(last.cache) + '% (internet not keeping up)' : '';
+    text('br-note', last.cache > 10 ? 'ATEM buffer ' + Math.round(last.cache) + '%: internet not keeping up' : 'Last 2½ hours');
+    $('br-note').className = 'note' + (last.cache > 10 ? ' stale' : '');
     var svg = box.querySelector('svg'), tip = box.querySelector('.tip'), xl = svg.querySelector('#br-x');
-    svg.querySelector('#br-hit').addEventListener('mousemove', function (ev) {
-      var r = svg.getBoundingClientRect(), vx = (ev.clientX - r.left) / r.width * W, best = pts[0];
+    function hover(ev) {
+      var r = svg.getBoundingClientRect(), cx = (ev.touches ? ev.touches[0].clientX : ev.clientX), vx = (cx - r.left) / r.width * W, best = pts[0];
       pts.forEach(function (p) { if (Math.abs(x(p.t) - vx) < Math.abs(x(best.t) - vx)) best = p; });
       xl.setAttribute('x1', x(best.t)); xl.setAttribute('x2', x(best.t)); xl.setAttribute('visibility', 'visible');
-      tip.textContent = clock(best.t) + '  ATEM ' + (best.atem === null ? 'off' : best.atem.toFixed(1)) + '  OBS ' + (best.obs === null ? 'off' : best.obs.toFixed(1)) + ' Mbps' + (best.cache > 0 ? '  buffer ' + Math.round(best.cache) + '%' : '');
+      tip.textContent = ck(best.t) + '   ATEM ' + (best.atem === null ? 'off' : best.atem.toFixed(1)) + '   OBS ' + (best.obs === null ? 'off' : best.obs.toFixed(1)) + ' Mbps' + (best.cache > 0 ? '   buffer ' + Math.round(best.cache) + '%' : '');
       tip.style.display = 'block';
-      var px = x(best.t) / W * r.width; tip.style.left = Math.min(Math.max(0, px - tip.offsetWidth / 2), r.width - tip.offsetWidth) + 'px'; tip.style.top = '18px';
-    });
-    svg.querySelector('#br-hit').addEventListener('mouseleave', function () { tip.style.display = 'none'; xl.setAttribute('visibility', 'hidden'); });
-  }
-
-  function renderNow() {
-    var win = inServiceWindow();
-    if (!win) return;
-    var n = nowDenver(), m = n.sec / 60, p = prepFor(win, 0);
-    text('now-label', (m < win.start ? 'Starting soon · ' : 'Now · ') + win.label);
-    text('now-title', p && p.title && p.title !== 'Waiting for info' ? p.title : win.label);
-    var live = lastStatus && lastStatus.live === '1';
-    text('now-elapsed', m >= win.start ? dur(n.sec - win.start * 60) : 'Starts in ' + dur(win.start * 60 - n.sec));
-    text('now-end', clock(win.end));
-    text('now-left', m < win.end ? dur(win.end * 60 - n.sec) : (live ? 'Stopping…' : 'Ended'));
-  }
-
-  function renderNext() {
-    var a = activeService(), n = nowDenver();
-    var target = a.current ? null : a;
-    if (a.current) {
-      // Next service after the current one
-      var m = n.sec / 60, best = null;
-      SERVICES.forEach(function (s) {
-        if (s === a.s) return;
-        var d = (s.day - n.day + 7) % 7, diff = d * 1440 + s.start - m;
-        if (diff <= 0) { diff += 7 * 1440; d += 7; }
-        if (!best || diff < best.diff) best = { s: s, diff: diff, daysAway: d };
-      });
-      target = best;
+      var px = x(best.t) / W * r.width; tip.style.left = Math.min(Math.max(0, px - tip.offsetWidth / 2), r.width - tip.offsetWidth) + 'px'; tip.style.top = '26px';
     }
-    var diffSec = target.daysAway * 86400 + target.s.start * 60 - n.sec;
-    if (diffSec < 0) diffSec += 7 * 86400;
-    text('next-name', target.s.label);
-    var dd = Math.floor(diffSec / 86400), hh = Math.floor(diffSec % 86400 / 3600), mm = Math.floor(diffSec % 3600 / 60), ss = diffSec % 60;
-    text('next-count', (dd ? dd + 'd ' : '') + String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0'));
-    var p = prepFor(target.s, target.daysAway);
-    text('next-title', p ? p.title + ' · ' + p.status : '');
+    var hit = svg.querySelector('#br-hit');
+    hit.addEventListener('mousemove', hover); hit.addEventListener('touchmove', hover, { passive: true });
+    hit.addEventListener('mouseleave', function () { tip.style.display = 'none'; xl.setAttribute('visibility', 'hidden'); });
   }
 
-  function stepAlert(stepMin, daysAway) {
-    if (daysAway !== 0) return null;
-    var n = nowDenver();
-    var startOfDay = Date.now() / 1000 - n.sec;
-    var t = startOfDay + stepMin * 60;
+  function countdown(diffSec) {
+    var dd = Math.floor(diffSec / 86400), hh = Math.floor(diffSec % 86400 / 3600), mm = Math.floor(diffSec % 3600 / 60), ss = diffSec % 60;
+    return (dd ? dd + 'd ' : '') + String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0');
+  }
+  function renderHero() {
+    var win = inServiceWindow(), n = nowDenver(), m = n.sec / 60;
+    var sub = $('h-sub'); sub.replaceChildren();
+    if (win) {
+      var p = prepFor(win, 0), title = p && p.title && p.title !== 'Waiting for info' ? p.title : win.label;
+      text('h-kicker', win.replay ? 'Replay' : (m < win.start ? 'Starting soon' : (live ? 'On air' : 'Service time')));
+      text('h-title', title);
+      sub.append(win.label + ', scheduled to end at ' + clock(win.end));
+      if (m < win.start) { text('h-clock', dur(win.start * 60 - n.sec)); text('h-cap', 'Until service starts'); }
+      else { text('h-clock', dur(n.sec - win.start * 60)); text('h-cap', m < win.end ? 'Into the service. Auto-stop in ' + dur(win.end * 60 - n.sec) : (live ? 'Stopping now' : 'Service ended')); }
+      var nx = nextAfter(win), ns = nx.daysAway * 86400 + nx.s.start * 60 - n.sec; if (ns < 0) ns += 7 * 86400;
+      text('h-then', 'Next: ' + nx.s.label + ' in ' + countdown(ns));
+    } else {
+      var a = nextAfter(null), diffSec = a.daysAway * 86400 + a.s.start * 60 - n.sec; if (diffSec < 0) diffSec += 7 * 86400;
+      var pp = prepFor(a.s, a.daysAway);
+      text('h-kicker', 'Next service');
+      text('h-title', a.s.label);
+      if (pp) { sub.append(pp.title === 'Waiting for info' ? 'Message not set yet' : pp.title); sub.append(pill(pp.status)); }
+      text('h-clock', countdown(diffSec)); text('h-cap', 'Until ' + (a.daysAway === 0 ? 'today' : a.daysAway === 1 ? 'tomorrow' : 'the service') + ' at ' + clock(a.s.start));
+    }
+  }
+
+  function stepAlert(stepMin) {
+    var n = nowDenver(), t = Date.now() / 1000 - n.sec + stepMin * 60;
     var hits = alerts.filter(function (x) { return x.time >= t - 60 && x.time <= t + 6 * 60; });
     if (!hits.length) return null;
-    var bad = hits.find(function (x) { return /^⚠/.test(x.message); });
-    return bad || hits[hits.length - 1];
+    return hits.find(function (x) { return /^⚠/.test(x.message); }) || hits[hits.length - 1];
   }
-
   function renderRun() {
     var a = activeService(), s = a.s, n = nowDenver(), m = n.sec / 60;
-    text('run-title', 'Run sheet · ' + s.label + (a.current ? '' : (a.daysAway === 0 ? ' (later today)' : a.daysAway === 1 ? ' (tomorrow)' : '')));
-    var ol = $('steps'); ol.replaceChildren();
-    var nextIdx = -1;
+    text('run-title', a.current ? 'Run sheet' : 'Run sheet, ' + s.label);
+    var ol = $('steps'); ol.replaceChildren(); var nextIdx = -1;
     s.steps.forEach(function (st, i) {
       var passed = a.current && m >= st[0];
       if (!passed && nextIdx < 0) nextIdx = i;
-      var al = a.current ? stepAlert(st[0], 0) : null;
-      var li = document.createElement('li'), ic = document.createElement('span'), tm = document.createElement('time'), w = document.createElement('span');
-      ic.className = 'ic'; w.className = 'what';
-      tm.textContent = clock(st[0]);
-      w.textContent = st[1];
-      var small = document.createElement('small');
-      if (al) { small.textContent = al.message; }
-      else { small.textContent = st[2]; }
-      w.appendChild(small);
-      if (al && /^⚠/.test(al.message)) { ic.textContent = '⚠️'; li.className = 'warn'; }
-      else if (al) { ic.textContent = /^🟢/.test(al.message) ? '🟢' : '✅'; }
-      else if (passed) { ic.textContent = '✓'; ic.style.color = 'var(--muted)'; }
-      else { ic.textContent = i === nextIdx ? '▶' : '○'; li.className = i === nextIdx && a.current ? 'nextstep up' : 'up'; }
-      li.appendChild(ic); li.appendChild(tm); li.appendChild(w); ol.appendChild(li);
+      var al = a.current ? stepAlert(st[0]) : null;
+      var li = document.createElement('li'), tm = document.createElement('time'), ic = document.createElement('span'), w = document.createElement('div'), sm = document.createElement('small');
+      ic.className = 'ic'; w.className = 'what'; tm.textContent = clock(st[0]); w.textContent = st[1];
+      sm.textContent = al ? al.message : st[2]; w.appendChild(sm);
+      if (al && /^⚠/.test(al.message)) li.className = 'warn';
+      else if (al) li.className = 'ok';
+      else if (passed) li.className = 'done';
+      else li.className = i === nextIdx && a.current ? 'next' : 'up';
+      li.append(tm, ic, w); ol.appendChild(li);
     });
-    var rn = $('run-next');
-    if (a.current && nextIdx >= 0) rn.textContent = s.steps[nextIdx][1] + ' in ' + dur(s.steps[nextIdx][0] * 60 - n.sec);
-    else if (a.current) rn.textContent = 'All steps done';
-    else rn.textContent = '';
+    if (a.current && nextIdx >= 0) text('run-next', s.steps[nextIdx][1] + ' in ' + dur(s.steps[nextIdx][0] * 60 - n.sec));
+    else text('run-next', a.current ? 'All steps done' : (a.daysAway === 0 ? 'Later today' : a.daysAway === 1 ? 'Tomorrow' : ''));
   }
 
   function renderFeed() {
     var ul = $('feed'); ul.replaceChildren();
-    if (!alerts.length) { var e = document.createElement('li'); e.className = 'empty'; e.textContent = 'No alerts in the last 12 hours.'; ul.appendChild(e); return; }
+    if (!alerts.length) { var e = document.createElement('li'); e.className = 'empty'; e.textContent = 'Nothing in the last 12 hours.'; ul.appendChild(e); return; }
     alerts.slice().sort(function (x, y) { return y.time - x.time; }).slice(0, 60).forEach(function (x) {
       var li = document.createElement('li'); if (/^⚠/.test(x.message)) li.className = 'warn';
       var t = document.createElement('time'); t.textContent = fmtTs(x.time);
       var mm = document.createElement('div'); mm.className = 'msg'; mm.textContent = x.message;
-      li.appendChild(t); li.appendChild(mm); ul.appendChild(li);
+      li.append(t, mm); ul.appendChild(li);
     });
   }
 
-  function addLink(box, label, href) {
-    if (!href) return;
-    var a = document.createElement('a'); a.href = href; a.target = '_blank'; a.rel = 'noopener'; a.textContent = label; box.appendChild(a);
-  }
+  function addLink(box, label, href) { if (!href) return; var a = document.createElement('a'); a.href = href; a.target = '_blank'; a.rel = 'noopener'; a.textContent = label; box.appendChild(a); }
+  function addTag(box, label) { var t = document.createElement('span'); t.className = 'tag'; t.textContent = label; box.appendChild(t); }
   function renderLinks() {
     var box = $('links'); box.replaceChildren();
     if (!prep) return;
     var a = activeService(), p = prepFor(a.s, a.current ? 0 : a.daysAway);
-    if (!p) { p = prep.services.find(function (x) { return x.outline || x.spanish; }); }
-    if (p) {
-      text('links-for', p.service + ' · ' + p.title);
-      addLink(box, 'Message outline', p.outline);
-      addLink(box, 'Spanish stream', p.spanish);
-    } else text('links-for', '');
-    var tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = 'Every week'; box.appendChild(tag);
+    if (!p) p = prep.services.find(function (x) { return x.outline || x.spanish; });
+    if (p && (p.outline || p.spanish)) { addTag(box, p.title + ', ' + p.service); addLink(box, 'Message outline', p.outline); addLink(box, 'Spanish stream', p.spanish); }
+    addTag(box, 'Every week');
     Object.keys(prep.channel_links || {}).forEach(function (k) { addLink(box, k, prep.channel_links[k]); });
   }
-
-  function pillClass(v) { return ({ 'Done': 'p-muted', 'Ready': 'p-ok', 'Needs info': 'p-warn', 'Needs upload': 'p-warn', 'Not set': 'p-warn' })[v] || 'p-muted'; }
   function renderPrep() {
     var tb = $('prep'); tb.replaceChildren();
     if (!prep) return;
     prep.services.forEach(function (s) {
       var tr = document.createElement('tr');
       var date = new Date(s.date + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' });
-      [[date, 'dim'], [s.service, ''], [s.title, 'hide-sm' + (s.title === 'Waiting for info' ? ' dim' : '')]].forEach(function (c) {
+      [[date, 'muted'], [s.service, ''], [s.title, 'hide-sm' + (s.title === 'Waiting for info' ? ' faint' : '')]].forEach(function (c) {
         var td = document.createElement('td'); td.textContent = c[0]; if (c[1]) td.className = c[1]; tr.appendChild(td);
       });
-      var td = document.createElement('td'), sp = document.createElement('span'); sp.className = 'pill ' + pillClass(s.status); sp.textContent = s.status; td.appendChild(sp); tr.appendChild(td);
+      var td = document.createElement('td'); td.appendChild(pill(s.status)); tr.appendChild(td);
       tb.appendChild(tr);
     });
-    if (prep.updated) text('prep-note', 'Updated ' + new Date(prep.updated).toLocaleString('en-US', { timeZone: TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + '.');
+    if (prep.updated) text('prep-note', 'Updated ' + new Date(prep.updated).toLocaleString('en-US', { timeZone: TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(/\s?([AP])M/, function (m, a) { return ' ' + a.toLowerCase() + 'm'; }));
   }
 
   var hist = [], histIds = {};
@@ -558,7 +666,7 @@
     try { addHist(msg, JSON.parse(msg.message)); renderChart(); } catch (e) {}
     if (msg.time < lastStatusTime) return;
     try { lastStatus = JSON.parse(msg.message); lastStatusTime = msg.time; } catch (e) { return; }
-    renderStatus(); renderNow();
+    renderStatus(); renderEquipment(); renderHub();
   }
   function handleAlert(msg) {
     if (alerts.some(function (x) { return x.id === msg.id; })) return;
@@ -574,47 +682,25 @@
   }
   function loadPrep() {
     fetch('prep.json', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
-      prep = d; renderPrep(); renderLinks(); renderNext(); renderNow();
-    }).catch(function () { text('prep-note', 'Prep list unavailable.'); });
-  }
-
-  function renderRestream() {
-    var box = $('rs-tiles'), fr = $('rs-fresh');
-    fr.textContent = rsTime ? '· updated ' + ago(rsTime) : '';
-    if (!rs) return;
-    var stale = Date.now() / 1000 - rsTime > 5 * 60;
-    box.textContent = '';
-    if (!rs.ok || stale) {
-      var d = document.createElement('div'); d.className = 'tile bad';
-      d.innerHTML = '<div class="lbl">Restream</div><div class="state">' + (stale ? 'NO UPDATE' : 'CAN\'T READ') + '</div><div class="sub"></div>';
-      d.querySelector('.sub').textContent = stale ? 'Last report ' + ago(rsTime) : 'Restream status needs reconnecting. Streaming is not affected.';
-      box.appendChild(d); return;
-    }
-    rs.channels.forEach(function (c) {
-      var d = document.createElement('div'); d.className = 'tile' + (c.enabled ? ' on' : '');
-      d.innerHTML = '<div class="lbl"></div><div class="state"></div><div class="sub"></div>';
-      var custom = /custom/i.test(c.platform), plat = c.platform.replace(/^Youtube$/, 'YouTube');
-      d.querySelector('.lbl').textContent = custom ? c.name : plat;
-      d.querySelector('.state').textContent = c.enabled ? 'ON' : 'OFF';
-      d.querySelector('.sub').textContent = custom ? 'Custom RTMP' : c.name;
-      box.appendChild(d);
-    });
+      prep = d; renderPrep(); renderLinks(); renderHero(); renderRun();
+    }).catch(function () { text('prep-note', 'Prep list unavailable'); });
   }
   function loadRestream() {
     fetch(RESTREAM_URL).then(function (r) { return r.json(); }).then(function (j) {
       if (j && j.t >= rsTime) { rs = j; rsTime = j.t; renderRestream(); }
     }).catch(function () {});
   }
-  function tick() { renderStatus(); renderEquipment(); renderRestream(); renderNow(); renderNext(); renderRun(); }
-  tick(); renderFeed(); loadPrep();
+
+  function tick() { renderStatus(); renderEquipment(); renderHero(); renderRun(); }
+  tick(); renderFeed(); renderRestream(); loadPrep();
   load(STATUS_TOPIC, handleStatus);
-  setInterval(renderChart, 60000);
-  var rzT; window.addEventListener('resize', function () { clearTimeout(rzT); rzT = setTimeout(renderChart, 200); });
   load(ALERT_TOPIC, handleAlert);
   loadRestream(); setInterval(loadRestream, 60000);
   setInterval(tick, 1000);
-  setInterval(renderLinks, 60000);
+  setInterval(function () { renderChart(); renderHub(); renderLinks(); }, 60000);
   setInterval(loadPrep, 10 * 60000);
+  var rzT; window.addEventListener('resize', function () { clearTimeout(rzT); rzT = setTimeout(function () { renderChart(); drawWires(); }, 150); });
+  if (document.fonts) document.fonts.ready.then(drawWires);
 })();
 </script>
 </body>
