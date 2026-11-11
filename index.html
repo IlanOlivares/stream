@@ -21,7 +21,7 @@
      red tally = on air / recording, green = healthy, amber = needs attention, grey = idle. */
   :root {
     --bg: #0e1318; --surface: #151b21; --surface-2: #1b232a; --line: #252f38; --line-2: #33404b;
-    --ink: #edf1f4; --ink-2: #a3aeb8; --ink-3: #6e7a85;
+    --ink: #edf1f4; --ink-2: #a3aeb8; --ink-3: #8a96a1;
     --ok: #4cc58c; --warn: #f2a93b; --tally: #ff5149; --idle: #47535e;
     --c-atem: #d95926; --c-obs: #3987e5;
     --font: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -60,6 +60,17 @@
   .clock { text-align: right; }
   .clock .big { font-size: clamp(2.6rem, 8vw, 5.4rem); font-weight: 300; letter-spacing: -.04em; line-height: .95; }
   .clock .cap { color: var(--ink-3); font-size: .9rem; margin-top: 8px; }
+  .verdict { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
+  .verdict .mark { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--idle); margin-top: 6px; }
+  .verdict .head { font-weight: 600; font-size: 1.05rem; }
+  .verdict ul { margin: 4px 0 0; padding: 0; list-style: none; color: var(--ink-2); font-size: .92rem; }
+  .verdict li + li { margin-top: 2px; }
+  .verdict .when { margin-left: auto; color: var(--ink-3); font-size: .84rem; white-space: nowrap; padding-top: 3px; }
+  .verdict.ok .mark { background: var(--ok); }
+  .verdict.warn { border-color: rgba(242,169,59,.55); background: rgba(242,169,59,.08); } .verdict.warn .mark { background: var(--warn); } .verdict.warn .head { color: var(--warn); }
+  .path.old .node, .taps.old .node, .health.old .hrow { opacity: .55; }
+  .fine { margin-top: 10px; font-size: .8rem; color: var(--ink-3); max-width: 70ch; }
+  .offline-note { display: none; }
   .hero .then { grid-column: 1 / -1; color: var(--ink-3); font-size: .92rem; display: none; }
   body.live-mode .hero .then { display: block; }
 
@@ -180,6 +191,11 @@
     .col.hub-col { padding-left: 0; }
     .taps { grid-template-columns: minmax(0, 1fr); }
     #rs-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    #rs-tiles .node.dest:not(.on) { display: none; }
+    #rs-tiles .offline-note { display: block; grid-column: 1 / -1; color: var(--ink-3); font-size: .84rem; }
+    .node.dest .sub { display: none; }
+    .verdict .when { display: none; }
+    .fine { font-size: .78rem; }
     td:first-child { white-space: nowrap; }
     .hide-sm { display: none; }
     .steps li { grid-template-columns: 62px 18px minmax(0, 1fr); }
@@ -205,6 +221,7 @@
       <div class="cap" id="h-cap"></div>
     </div>
     <div class="then" id="h-then"></div>
+    <div class="verdict" id="verdict" role="status"><span class="mark"></span><div><div class="head" id="v-head">Waiting for the first report</div><ul id="v-list"></ul></div><span class="when" id="v-when"></span></div>
   </header>
 
   <section class="panel" id="s-path" aria-label="Signal path">
@@ -225,13 +242,14 @@
         <div id="rs-tiles" class="col"></div>
       </div>
     </div>
-    <div class="taps">
+    <div class="taps" id="taps">
       <h3>Recording and Spanish</h3>
       <div class="node" id="t-rec"><div class="top"><span class="dot"></span><span class="lbl">OBS recording</span><span class="state">—</span></div><div class="sub"></div></div>
       <div class="node" id="t-hd"><div class="top"><span class="dot"></span><span class="lbl">HyperDeck</span><span class="state">—</span></div><div class="sub"></div></div>
       <div class="node" id="t-sp"><div class="top"><span class="dot"></span><span class="lbl">Spanish stream</span><span class="state">—</span></div><div class="sub"></div></div>
     </div>
     <div class="key"><span><i style="background:var(--ok)"></i>Running</span><span><i style="background:var(--tally)"></i>Recording</span><span><i style="background:var(--warn)"></i>Needs attention</span><span><i style="background:var(--idle)"></i>Idle, not needed now</span></div>
+    <p class="fine">A moving line means the encoder is live and the destination is selected in Restream. It doesn't confirm that the platform itself is showing video.</p>
   </section>
 
   <div class="grid" id="s-mid">
@@ -241,7 +259,7 @@
     </section>
     <section class="panel span-5" aria-label="Church Mac">
       <div class="ph"><h2>Church Mac</h2><span class="note" id="mac-note"></span></div>
-      <div class="health">
+      <div class="health" id="health">
         <div class="hrow" id="t-obsapp"><div class="top"><span class="lbl">OBS</span><span class="state">—</span></div><div class="sub"></div><div class="meta"></div></div>
         <div class="hrow" id="t-mac"><div class="top"><span class="lbl">Companion</span><span class="state">—</span></div><div class="sub"></div><div class="meta"></div></div>
       </div>
@@ -321,7 +339,7 @@
       [hm(18,30), 'Replay ends', 'Turn Restream destinations off afterward']] }
   ];
 
-  var lastStatus = null, lastStatusTime = 0, alerts = [], prep = null, rs = null, rsTime = 0;
+  var feedDown = false, lastStatus = null, lastStatusTime = 0, alerts = [], prep = null, rs = null, rsTime = 0;
 
   function $(id) { return document.getElementById(id); }
   function text(id, v) { $(id).textContent = v; }
@@ -474,6 +492,8 @@
       d.dataset.on = c.enabled ? '1' : '';
       box.appendChild(d);
     });
+    var offs = rs.channels.filter(function (c) { return !c.enabled; }).map(function (c) { return /custom/i.test(c.platform) ? c.name : c.platform.replace(/^Youtube$/, 'YouTube'); });
+    if (offs.length) { var on_ = document.createElement('div'); on_.className = 'offline-note'; on_.textContent = (offs.length === rs.channels.length ? 'None selected. Off: ' : 'Off: ') + offs.join(', '); box.appendChild(on_); }
     renderHub();
   }
   function renderHub() {
@@ -483,7 +503,7 @@
     if (!rs.ok || stale5) { setTile('t-hub', 'bad', stale5 ? 'No update' : 'Can\'t read', 'Destination status unavailable'); drawWires(); return; }
     var on = rs.channels.filter(function (c) { return c.enabled; }).length, n = rs.channels.length;
     var feeding = live && !stale && ($('t-atem').classList.contains('on') || $('t-obs').classList.contains('on'));
-    setTile('t-hub', feeding ? 'on' : '', feeding ? 'Receiving' : 'Standby', on + ' of ' + n + ' destinations on' + (rs.event && rs.event.title ? ' for ' + rs.event.title.replace(/^#ChurchOnline \| | \| Abundant Church$/g, '') : ''));
+    setTile('t-hub', feeding ? 'on' : '', feeding ? 'Receiving' : 'Standby', on + ' of ' + n + ' destinations selected' + (rs.event && rs.event.title ? ' for ' + rs.event.title.replace(/^#ChurchOnline \| | \| Abundant Church$/g, '') : ''));
     drawWires();
   }
 
@@ -675,7 +695,7 @@
   function load(topic, handler) {
     fetch(NTFY + topic + '/json?poll=1&since=12h').then(function (r) { return r.text(); }).then(function (t) {
       t.split('\n').forEach(function (l) { if (!l) return; try { var j = JSON.parse(l); if (j.event === 'message') handler(j); } catch (e) {} });
-    }).catch(function () {}).finally(function () {
+    }).catch(function () { if (topic === STATUS_TOPIC) feedDown = true; }).finally(function () {
       var es = new EventSource(NTFY + topic + '/sse');
       es.onmessage = function (ev) { try { var j = JSON.parse(ev.data); if (j.event === 'message') handler(j); } catch (e) {} };
     });
@@ -691,7 +711,49 @@
     }).catch(function () {});
   }
 
-  function tick() { renderStatus(); renderEquipment(); renderHero(); renderRun(); }
+  // One-line verdict: everything that needs attention, in plain words, at the top of the page.
+  var NODE_NAMES = { 't-atem': 'ATEM', 't-obs': 'OBS backup', 't-rec': 'OBS recording', 't-sp': 'Spanish stream', 't-hd': 'HyperDeck', 't-obsapp': 'OBS app', 't-mac': 'Companion' };
+  function renderVerdict() {
+    var v = $('verdict'), now = Date.now() / 1000, age = lastStatusTime ? now - lastStatusTime : null, problems = [];
+    var old = age !== null && age > HEARD_WARN;
+    ['path', 'taps', 'health'].forEach(function (id) { $(id).classList.toggle('old', old); });
+    if (!lastStatus) {
+      v.className = 'verdict'; text('v-head', feedDown ? 'Can\'t reach the status feed' : 'Waiting for the first report'); $('v-list').replaceChildren(); text('v-when', ''); document.title = 'Abundant Stream Status'; return;
+    }
+    if (old) problems.push('No report from the church Mac for ' + ago(lastStatusTime).replace(' ago', '') + '. Companion or the Mac may be off');
+    else {
+      if (stale) problems.push('No update from Companion for ' + ago(lastStatusTime).replace(' ago', '') + ' during a live service');
+      Object.keys(NODE_NAMES).forEach(function (id) {
+        var el = $(id); if (!el.classList.contains('bad')) return;
+        problems.push(NODE_NAMES[id] + ': ' + el.querySelector('.state').textContent.toLowerCase() + '. ' + el.querySelector('.sub').textContent);
+      });
+    }
+    // Restream: unreadable, or a needed destination not selected from 30 min before a service until it ends.
+    var a = activeService(), n = nowDenver(), m = n.sec / 60;
+    if (rs) {
+      var rsOld = now - rsTime > 5 * 60;
+      if (!rs.ok || rsOld) problems.push('Restream status ' + (rsOld ? 'hasn\'t updated for ' + ago(rsTime).replace(' ago', '') : 'can\'t be read'));
+      else if (a.current && !a.s.replay && m >= a.s.steps[0][0] && m < a.s.end) {
+        var need = { YouTube: function (c) { return /youtube/i.test(c.platform); }, Facebook: function (c) { return /^facebook$/i.test(c.platform); }, Subsplash: function (c) { return /subsplash/i.test(c.name); } };
+        if (a.s.key === 'sun9') need.KTSM = function (c) { return /ktsm/i.test(c.name); };
+        var missing = Object.keys(need).filter(function (k) { return !rs.channels.some(function (c) { return need[k](c) && c.enabled; }); });
+        if (missing.length) problems.push(missing.join(', ') + (missing.length > 1 ? ' are' : ' is') + ' off in Restream. ' + (m < a.s.start - 10 ? 'Turn ' + (missing.length > 1 ? 'them' : 'it') + ' on before Go Live' : 'Viewers there can\'t see the stream'));
+      }
+    }
+    var ul = $('v-list'); ul.replaceChildren();
+    if (problems.length) {
+      v.className = 'verdict warn';
+      text('v-head', problems.length === 1 ? '1 thing needs attention' : problems.length + ' things need attention');
+      problems.forEach(function (p) { var li = document.createElement('li'); li.textContent = p; ul.appendChild(li); });
+    } else {
+      v.className = 'verdict ok';
+      var win = inServiceWindow();
+      text('v-head', live ? 'On air, everything is running' : (win && win.replay ? 'Replay time, nothing needs attention' : (a.current && m < a.s.start ? 'Ready for ' + a.s.label : 'All equipment connected and ready')));
+    }
+    text('v-when', 'Checked ' + ago(lastStatusTime));
+    document.title = (problems.length ? '⚠ ' + problems.length + ' · ' : (live ? '● On air · ' : '')) + 'Abundant Stream';
+  }
+  function tick() { renderStatus(); renderEquipment(); renderHero(); renderRun(); renderVerdict(); }
   tick(); renderFeed(); renderRestream(); loadPrep();
   load(STATUS_TOPIC, handleStatus);
   load(ALERT_TOPIC, handleAlert);
