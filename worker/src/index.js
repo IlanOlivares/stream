@@ -203,6 +203,11 @@ const FB = c => /^facebook$/i.test(c.platform);
 const SUB = c => /subsplash/i.test(c.name);
 const KTSM = c => /ktsm/i.test(c.name);
 const DEST_CHECKS = [
+  // 30 min before each service (Health Check time): heads-up while there's still time before Go Live.
+  { day: 0, min: 8 * 60 + 30, label: 'Sun 9:00', pre: '8:50', on: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM } },
+  { day: 0, min: 10 * 60 + 15, label: 'Sun 10:45', pre: '10:35', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
+  { day: 0, min: 12 * 60, label: 'Sun 12:30', pre: '12:20', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
+  { day: 3, min: 18 * 60, label: 'Wed 6:30', pre: '6:20', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
   { day: 0, min: 9 * 60, label: 'Sun 9:00', on: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM } },
   { day: 0, min: 10 * 60 + 35, label: 'Sun 9:00', off: { KTSM } },
   { day: 0, min: 10 * 60 + 40, label: 'Sun 10:45', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
@@ -234,7 +239,9 @@ async function checkDestinations(env, ts) {
   if (!check || !(await env.STATE.get('restream_tokens'))) return 'nothing due';
   const problems = destProblems(check, await readChannels(env));
   if (!problems.length) return 'ok';
-  const msg = check.on
+  const msg = check.pre
+    ? `⏰ ${check.label} starts in 30 min: ${problems.join(', ')} in Restream. Turn ${problems.length > 1 ? 'them' : 'it'} on before Go Live at ${check.pre}.`
+    : check.on
     ? `⚠️ ${check.label}: Restream destination problem: ${problems.join(', ')}. Viewers there can't see the stream.`
     : `⚠️ ${check.label} is over but ${problems.join(', ')} in Restream. Turn ${problems.length > 1 ? 'them' : 'it'} off so the ATEM can't broadcast by accident.`;
   await notify(msg, 'restream,destinations');
