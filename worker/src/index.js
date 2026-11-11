@@ -160,6 +160,20 @@ async function restreamRoute(req, env, path) {
       }
       rows.push('</ul>');
     }
+    // Restream's newer app picks destinations per stream (event), so show what the events endpoints report.
+    for (const p of ['/v2/user/events/in-progress', '/v2/user/events/upcoming?source=1', '/v2/user/events/upcoming']) {
+      try {
+        const r = await rsGet(env, p);
+        const list = Array.isArray(r.body) ? r.body : (r.body && (r.body.events || r.body.data)) || [];
+        rows.push(`<h3>${esc(p)} → HTTP ${r.status}, ${list.length} event(s)</h3>`);
+        if (!list.length) { rows.push(`<pre>${esc(JSON.stringify(r.body).slice(0, 300))}</pre>`); continue; }
+        rows.push(`<p>Fields: <code>${esc(Object.keys(list[0]).join(', '))}</code></p>`);
+        for (const ev of list.slice(0, 5)) {
+          const d = (ev.destinations || []).map(x => Object.entries(x).filter(([k]) => !/key|url|token/i.test(k)).map(([k, v]) => k + '=' + v).join(' ')).join('<br>');
+          rows.push(`<p><b>${esc(ev.title || ev.id)}</b> status=${esc(ev.status)} scheduledFor=${esc(ev.scheduledFor)}<br><span style="font-family:monospace">${d || '(no destinations field)'}</span></p>`);
+        }
+      } catch (e) { rows.push(`<h3>${esc(p)}</h3><pre>${esc(e.message)}</pre>`); }
+    }
     try { rows.push('<h3>As the status page will see it</h3><ul>' + (await readChannels(env)).map(c => `<li>${esc(c.platform)} · ${esc(c.name)}: <b>${c.enabled ? 'ON' : 'off'}</b></li>`).join('') + '</ul>'); } catch (e) { rows.push('<pre>' + esc(e.message) + '</pre>'); }
     return html('<h2>Restream test</h2>' + rows.join(''));
   }
