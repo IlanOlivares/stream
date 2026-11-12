@@ -438,6 +438,8 @@ export default {
     if (path === '/youtube/test') {
       // One 1-unit call to confirm the key works: reads the channel's public name.
       if (!env.YOUTUBE_API_KEY) return Response.json({ configured: false });
+      const h = new URL(req.url).searchParams.get('handle');
+      if (h) { try { const j = await ytGet(env, 'channels?part=snippet&forHandle=' + encodeURIComponent(h)); return Response.json({ handle: h, found: (j.items || []).map(c => ({ id: c.id, title: c.snippet.title })) }); } catch (e) { return Response.json({ error: String(e.message || e) }); } }
       try { const j = await ytGet(env, 'channels?part=snippet&id=' + YT_CHANNEL); return Response.json({ configured: true, ok: true, channel: j.items && j.items[0] && j.items[0].snippet.title }); }
       catch (e) { return Response.json({ configured: true, ok: false, error: String(e.message || e) }); }
     }
