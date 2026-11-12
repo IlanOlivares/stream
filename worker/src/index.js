@@ -29,8 +29,10 @@ async function ntfyFetch(url, opts) {
   throw last;
 }
 
-async function poll(topic) {
-  const res = await ntfyFetch(`${NTFY}${topic}/json?poll=1&since=12h`);
+// Keep `since` as short as each job needs: the status topic gets a report a minute during services, and parsing
+// 12 hours of it every minute would eat into the worker's 10 ms CPU allowance.
+async function poll(topic, since) {
+  const res = await ntfyFetch(`${NTFY}${topic}/json?poll=1&since=${since || '12h'}`);
   return (await res.text()).split('\n').filter(Boolean)
     .map(l => { try { return JSON.parse(l); } catch { return null; } })
     .filter(m => m && m.event === 'message');
@@ -46,7 +48,7 @@ async function notify(message, tags, extra) {
 
 async function checkHeartbeat(dryRun) {
   const now = Math.floor(Date.now() / 1000);
-  const [status, alerts] = await Promise.all([poll(STATUS_TOPIC), poll(ALERT_TOPIC)]);
+  const [status, alerts] = await Promise.all([poll(STATUS_TOPIC, '1h'), poll(ALERT_TOPIC)]);
   const last = status.reduce((t, m) => Math.max(t, m.time), 0);
   const silentFor = last ? now - last : null;
   const silent = !last || silentFor > SILENT_MIN * 60;
@@ -56,7 +58,7 @@ async function checkHeartbeat(dryRun) {
   let action = 'none';
   if (silent && !downSent) {
     action = 'down';
-    const since = last ? `since ${clock(last)} (${Math.round(silentFor / 60)} min)` : 'in the last 12 hours';
+    const since = last ? `since ${clock(last)} (${Math.round(silentFor / 60)} min)` : 'in the last hour';
     if (!dryRun) await notify(`⚠️ Church Mac is silent: no status from Companion ${since}. The Mac may be asleep, off or offline, or Companion is closed.`, 'heartbeat,down');
   } else if (!silent && downSent) {
     action = 'up';
@@ -257,9 +259,9 @@ const SERVICES = [
 ];
 function denverDate(ts) { return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ts)); }
 function skipped(ts) { return SKIP_DATES.includes(denverDate(ts)); }
-async function statusSeries() {
+async function statusSeries(since) {
   const out = [];
-  for (const m of await poll(STATUS_TOPIC)) { try { out.push({ time: m.time, j: JSON.parse(m.message) }); } catch {} }
+  for (const m of await poll(STATUS_TOPIC, since)) { try { out.push({ time: m.time, j: JSON.parse(m.message) }); } catch {} }
   return out.sort((a, b) => a.time - b.time);
 }
 const atemOn = j => j.atem_stream === true || j.atem_stream === 'true';
@@ -466,10 +468,14 @@ async function checkEmergency(env, ts) {
   const now = denverClock(ts), t = ts / 1000;
   const svc = SERVICES.find(x => x.day === now.day && now.min >= x.start - 10 + 3 && now.min < x.end);
   if (!svc || skipped(ts)) return 'not in a service';
-  const series = await statusSeries();
+  const series = await statusSeries('10m');
   const last = series[series.length - 1];
   let kind = null, msg = '';
-  if (!last || t - last.time > 300) { kind = 'silent'; msg = `Abundant stream emergency. The church Mac has sent no status for 5 minutes during the ${svc.label} service. It may be off, frozen or offline.`; }
+  const pendKey = 'silent_' + denverDate(ts) + '_' + svc.key;
+  if (!last || t - last.time > 300) {
+    // Confirm silence on two consecutive minutes so one empty read from ntfy can't place a call.
+    if (!(await env.STATE.get(pendKey))) { await env.STATE.put(pendKey, '1', { expirationTtl: 240 }); return 'silent, confirming'; }
+    kind = 'silent'; msg = `Abundant stream emergency. The church Mac has sent no status for 5 minutes during the ${svc.label} service. It may be off, frozen or offline.`; }
   else {
     const recent = series.filter(x => x.time >= t - 210);
     if (recent.length >= 3 && recent.every(x => !atemOn(x.j) && !obsOn(x.j))) { kind = 'down'; msg = `Abundant stream emergency. The stream has been down for 3 minutes during the ${svc.label} service. Both the ATEM and OBS are off.`; }
@@ -477,6 +483,8 @@ async function checkEmergency(env, ts) {
   if (!kind) return 'ok';
   const key = 'call_' + denverDate(ts) + '_' + svc.key;
   if (await env.STATE.get(key)) return 'already called';
+  // Belt and braces (KV can lag by a minute): don't call twice for the same service.
+  if ((await poll(ALERT_TOPIC, '3h')).some(m => (m.message || '').startsWith('📞') && (m.message || '').includes(svc.label))) return 'already called';
   await env.STATE.put(key, kind, { expirationTtl: 86400 });
   await notify('📞 ' + msg, 'rotating_light,emergency', { Call: 'yes', Priority: 'urgent' });
   return 'called';
@@ -502,14 +510,14 @@ async function writeHistory(env, ts) {
   if (!svc || skipped(ts)) return 'nothing due';
   const date = denverDate(ts), dayStart = ts / 1000 - now.min * 60;
   const from = dayStart + (svc.start - 10) * 60, to = dayStart + svc.end * 60;
-  const rows = (await statusSeries()).filter(x => x.time >= from && x.time <= to && x.j.live === '1');
+  const rows = (await statusSeries('3h')).filter(x => x.time >= from && x.time <= to && x.j.live === '1');
   const firstLive = rows.find(x => atemOn(x.j) || obsOn(x.j));
   const onTime = !!firstLive && firstLive.time <= dayStart + (svc.start + 2) * 60;
   const atemDown = rows.filter(x => !atemOn(x.j)).length, bothDown = rows.filter(x => !atemOn(x.j) && !obsOn(x.j)).length;
   const buffer = rows.reduce((mx, x) => Math.max(mx, parseFloat(x.j.atem_cache) || 0), 0);
   const recMissing = rows.filter(x => x.j.obs_rec === 'Stopped').length;
   const cur = JSON.parse(await env.STATE.get('svc_' + date + '_' + svc.key) || '{}');
-  const alerts = (await poll(ALERT_TOPIC)).filter(m => m.time >= from && m.time <= to + 600 && /^⚠️|^📞/.test(m.message || '')).length;
+  const alerts = (await poll(ALERT_TOPIC, '3h')).filter(m => m.time >= from && m.time <= to + 600 && /^⚠️|^📞/.test(m.message || '')).length;
   const entry = { date, label: svc.label, reports: rows.length, onTime, atemDownMin: atemDown, bothDownMin: bothDown, bufferPeak: Math.round(buffer), recordingGapMin: recMissing, youtube: !!cur.yt, peakViewers: cur.peak || null, alerts,
     ok: rows.length > 0 && onTime && bothDown === 0 && alerts === 0 };
   const hist = JSON.parse(await env.STATE.get('history') || '[]').filter(h => !(h.date === date && h.label === svc.label));
@@ -528,11 +536,11 @@ const RESTART_REMINDERS = [
 ];
 function upText(sec) { const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600); return d ? `${d} day${d > 1 ? 's' : ''}${h ? ' ' + h + ' h' : ''}` : `${h} h`; }
 async function macUptime(ts) {
-  const status = await poll(STATUS_TOPIC);
+  const status = await poll(STATUS_TOPIC, '1h');
   for (const m of status.sort((a, b) => b.time - a.time)) {
     try { const j = JSON.parse(m.message); const up = Number(j.comp_up); if (!isNaN(up) && j.t) return up + (ts / 1000 - Number(j.t)); } catch {}
   }
-  return null; // no report in 12 h: the dead man's switch already covers that
+  return null; // no report in the last hour: the dead man's switch already covers that
 }
 async function checkRestartReminder(ts) {
   const now = denverClock(ts);
@@ -584,6 +592,11 @@ export default {
       // Three quick reads from ntfy to see whether Cloudflare can reach it reliably.
       const out = [];
       for (let i = 0; i < 3; i++) { const t0 = Date.now(); try { const r = await fetch(NTFY + STATUS_TOPIC + '/json?poll=1&since=5m', { headers: NTFY_AUTH ? { authorization: 'Bearer ' + NTFY_AUTH } : {}, signal: AbortSignal.timeout(8000) }); out.push(r.status + ' in ' + (Date.now() - t0) + ' ms'); } catch (e) { out.push(e.name + ' after ' + (Date.now() - t0) + ' ms'); } }
+      if (new URL(req.url).searchParams.get('reserved') === '1') {
+        // Confirms the worker's token may post to the (reserved) status topic. The text isn't JSON, so the status page ignores it.
+        try { const r = await ntfyFetch(NTFY + STATUS_TOPIC, { method: 'POST', body: 'worker auth test' }); return Response.json({ reservedPost: r.status }); }
+        catch (e) { return Response.json({ reservedPost: 'failed', error: String(e.message || e) }); }
+      }
       const posts = [];
       for (let i = 0; i < 2; i++) { const t0 = Date.now(); try { const r = await fetch(NTFY + 'abundant-debug-x7q2', { method: 'POST', body: 'check', headers: NTFY_AUTH ? { authorization: 'Bearer ' + NTFY_AUTH } : {}, signal: AbortSignal.timeout(4000) }); posts.push(r.status + ' in ' + (Date.now() - t0) + ' ms ' + (r.status >= 400 ? (await r.text()).slice(0, 120) : '')); } catch (e) { posts.push(e.name + ' after ' + (Date.now() - t0) + ' ms'); } }
       return Response.json({ token: !!NTFY_AUTH, reads: out, posts, lastScheduledCheck: env.STATE ? JSON.parse(await env.STATE.get('hb_last') || 'null') : null });
