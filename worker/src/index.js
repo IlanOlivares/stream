@@ -219,7 +219,7 @@ async function readEvent(env) {
     if (!list.length) continue;
     const ev = list.find(e => e.isInstant) || list[0];
     const ids = new Set(); list.forEach(e => (e.destinations || []).forEach(d => ids.add(String(d.channelId))));
-    return { id: ev.id, title: ev.title || '', live: p.includes('in-progress'), ids, count: list.length,
+    return { id: ev.id, title: ev.title || '', description: ev.description || '', live: p.includes('in-progress'), ids, count: list.length,
       dests: list.flatMap(e => (e.destinations || []).map(d => ({ event: e.id, id: d.id, channelId: String(d.channelId) }))) };
   }
   return null;
@@ -416,7 +416,9 @@ async function addDestinations(env, check) {
     const c = chans.find(x => match(x));
     if (!c || attached.has(String(c.id))) continue;
     const body = { channelId: c.id };
-    if (c.platformId === 5 || /youtube/i.test(c.platform)) Object.assign(body, { title: ev.title || 'Abundant Church', privacyStatus: 'public' });
+    // YouTube needs its broadcast details passed in: use the stream's own title and description (what Update Titles
+    // set), public, with an event post, the same as adding it in Restream's app.
+    if (c.platformId === 5 || /youtube/i.test(c.platform)) Object.assign(body, { title: ev.title || 'Abundant Church', description: ev.description || '', privacyStatus: 'public', createEventPost: true });
     const res = await fetch(RS_API + '/v2/user/events/' + ev.id + '/destinations', { method: 'POST', headers: { authorization: 'Bearer ' + t, 'content-type': 'application/json' }, body: JSON.stringify(body) });
     if (res.ok || res.status === 409) added.push(name);
     else return { added, failed: name + ': Restream said ' + res.status + ' ' + (await res.text()).slice(0, 120) };
