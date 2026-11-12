@@ -40,8 +40,8 @@ function clock(ts) {
   return new Date(ts * 1000).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
 }
 
-async function notify(message, tags) {
-  await ntfyFetch(NTFY + ALERT_TOPIC, { method: 'POST', body: message, headers: { Tags: tags } });
+async function notify(message, tags, extra) {
+  await ntfyFetch(NTFY + ALERT_TOPIC, { method: 'POST', body: message, headers: { Tags: tags, ...(extra || {}) } });
 }
 
 async function checkHeartbeat(dryRun) {
@@ -246,6 +246,25 @@ async function restreamStatus(req, env, ctx) {
   return res;
 }
 
+// ---------- Services (Mountain time, minutes after midnight) and dates with no service ----------
+// SKIP_DATES: days the usual service doesn't happen (holidays). Every cloud check skips them.
+const SKIP_DATES = ['2026-11-25']; // no Wednesday service Thanksgiving week (Thursday morning service instead)
+const SERVICES = [
+  { day: 0, start: 540, end: 625, label: 'Sun 9:00', key: 'sun9', spanish: true },
+  { day: 0, start: 645, end: 730, label: 'Sun 10:45', key: 'sun1045' },
+  { day: 0, start: 750, end: 840, label: 'Sun 12:30', key: 'sun1230' },
+  { day: 3, start: 1110, end: 1200, label: 'Wed 6:30', key: 'wed', spanish: true },
+];
+function denverDate(ts) { return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ts)); }
+function skipped(ts) { return SKIP_DATES.includes(denverDate(ts)); }
+async function statusSeries() {
+  const out = [];
+  for (const m of await poll(STATUS_TOPIC)) { try { out.push({ time: m.time, j: JSON.parse(m.message) }); } catch {} }
+  return out.sort((a, b) => a.time - b.time);
+}
+const atemOn = j => j.atem_stream === true || j.atem_stream === 'true';
+const obsOn = j => !!j.obs_stream && j.obs_stream !== 'Off-Air';
+
 // ---------- YouTube: is the English channel actually live? (needs the YOUTUBE_API_KEY secret) ----------
 // Only asks YouTube during service windows. One search (100 quota units, at most every 5 min) finds the live
 // video; after that a 1-unit lookup confirms it is still live. Daily quota is 10,000 units.
@@ -266,7 +285,7 @@ async function youtubeStatus(env, ts) {
   if (saved && saved.id) {
     const j = await ytGet(env, 'videos?part=snippet,liveStreamingDetails&id=' + saved.id);
     const v = (j.items || [])[0];
-    if (v && v.snippet.liveBroadcastContent === 'live') return { configured: true, inWindow: true, live: true, id: saved.id, title: v.snippet.title, since: v.liveStreamingDetails && v.liveStreamingDetails.actualStartTime };
+    if (v && v.snippet.liveBroadcastContent === 'live') { const d = v.liveStreamingDetails || {}; return { configured: true, inWindow: true, live: true, id: saved.id, title: v.snippet.title, since: d.actualStartTime, viewers: d.concurrentViewers ? Number(d.concurrentViewers) : null }; }
     await env.STATE.delete('yt_live');
   }
   const last = Number(await env.STATE.get('yt_search_at') || 0);
@@ -278,13 +297,27 @@ async function youtubeStatus(env, ts) {
   await env.STATE.put('yt_live', JSON.stringify({ id: hit.id.videoId, at: t }), { expirationTtl: 6 * 3600 });
   return { configured: true, inWindow: true, live: true, id: hit.id.videoId, title: hit.snippet.title };
 }
+// Spanish stream: its live link for the day is in the status page's prep.json, so one 1-unit lookup of that exact
+// video says whether it's live (no search needed).
+async function spanishStatus(env, ts) {
+  if (!env.YOUTUBE_API_KEY) return { configured: false };
+  const now = denverClock(ts), svc = SERVICES.find(x => x.spanish && x.day === now.day && now.min >= x.start - 10 && now.min < x.end);
+  if (!svc || skipped(ts)) return { configured: true, inWindow: false, live: false };
+  const prep = await fetch('https://ilanolivares.github.io/stream/prep.json?t=' + Date.now(), { signal: AbortSignal.timeout(6000) }).then(r => r.json()).catch(() => null);
+  const row = prep && (prep.services || []).find(x => x.key === svc.key && x.date === denverDate(ts));
+  const m = row && row.spanish && String(row.spanish).match(/(?:live\/|v=|youtu\.be\/)([\w-]{11})/);
+  if (!m) return { configured: true, inWindow: true, live: false, noLink: true };
+  const j = await ytGet(env, 'videos?part=snippet,liveStreamingDetails&id=' + m[1]);
+  const v = (j.items || [])[0], d = (v && v.liveStreamingDetails) || {};
+  return { configured: true, inWindow: true, id: m[1], live: !!v && v.snippet.liveBroadcastContent === 'live', ended: !!d.actualEndTime, viewers: d.concurrentViewers ? Number(d.concurrentViewers) : null };
+}
 async function youtubeRoute(req, env, ctx) {
   const cors = { 'access-control-allow-origin': '*', 'content-type': 'application/json', 'cache-control': 'public, max-age=120' };
   const cache = caches.default, key = new Request(new URL('/youtube/status', req.url).toString());
   const hit = await cache.match(key);
   if (hit) return hit;
   let body;
-  try { body = { t: Math.floor(Date.now() / 1000), ok: true, ...(await youtubeStatus(env, Date.now())) }; }
+  try { body = { t: Math.floor(Date.now() / 1000), ok: true, ...(await youtubeStatus(env, Date.now())), es: await spanishStatus(env, Date.now()).catch(e => ({ ok: false, error: String(e.message || e).slice(0, 120) })) }; }
   catch (e) { body = { t: Math.floor(Date.now() / 1000), ok: false, error: String(e.message || e).slice(0, 200) }; }
   const res = new Response(JSON.stringify(body), { headers: cors });
   ctx.waitUntil(cache.put(key, res.clone()));
@@ -298,8 +331,13 @@ const YT_CHECKS = [
 async function checkYouTube(env, ts) {
   const now = denverClock(ts);
   const c = YT_CHECKS.find(x => x.day === now.day && x.min === now.min);
-  if (!c || !env.YOUTUBE_API_KEY) return 'nothing due';
+  if (!c || !env.YOUTUBE_API_KEY || skipped(ts)) return 'nothing due';
   await env.STATE.delete('yt_search_at'); // allow a fresh search right now
+  const svc = SERVICES.find(x => x.label === c.label);
+  if (svc && svc.spanish) {
+    const es = await spanishStatus(env, ts).catch(() => null);
+    if (es && es.inWindow && !es.live && !es.noLink) await notify(`⚠️ ${c.label}: the Spanish YouTube stream isn't live yet. Check the Spanish Mac's OBS and the Spanish YouTube event (Auto-start on).`, 'youtube,warning');
+  }
   let st;
   try { st = await youtubeStatus(env, ts); } catch (e) { await notify(`⚠️ ${c.label}: couldn't check YouTube (${String(e.message || e).slice(0, 80)}). Streaming is not affected.`, 'youtube,warning'); return 'error'; }
   if (st.live) return 'live';
@@ -364,13 +402,43 @@ async function removeDestinations(env, check) {
   }
   return { removed, failed };
 }
+// Before a service (the 30-minute check): attach the needed destinations to the reusable live stream.
+async function addDestinations(env, check) {
+  const ev = await readEvent(env);
+  if (!ev) return { added: [], failed: 'no reusable Restream stream found' };
+  if (ev.live) return { added: [], failed: 'a stream is already in progress' };
+  const r = await rsGet(env, '/v2/user/channel/all');
+  const names = await platformNames(env);
+  const chans = (Array.isArray(r.body) ? r.body : []).map(c => ({ id: c.id, name: c.displayName, platform: names[c.streamingPlatformId] || '', platformId: c.streamingPlatformId }));
+  const attached = new Set(ev.dests.map(d => d.channelId));
+  const t = await accessToken(env), added = [];
+  for (const [name, match] of Object.entries(check.on)) {
+    const c = chans.find(x => match(x));
+    if (!c || attached.has(String(c.id))) continue;
+    const body = { channelId: c.id };
+    if (c.platformId === 5 || /youtube/i.test(c.platform)) Object.assign(body, { title: ev.title || 'Abundant Church', privacyStatus: 'public' });
+    const res = await fetch(RS_API + '/v2/user/events/' + ev.id + '/destinations', { method: 'POST', headers: { authorization: 'Bearer ' + t, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (res.ok || res.status === 409) added.push(name);
+    else return { added, failed: name + ': Restream said ' + res.status + ' ' + (await res.text()).slice(0, 120) };
+  }
+  return { added, failed: null };
+}
 async function checkDestinations(env, ts) {
   const now = denverClock(ts);
   const check = DEST_CHECKS.find(c => c.day === now.day && c.min === now.min);
-  if (!check || !(await env.STATE.get('restream_tokens'))) return 'nothing due';
+  if (!check || skipped(ts) || !(await env.STATE.get('restream_tokens'))) return 'nothing due';
   let problems = destProblems(check, await readChannels(env));
   let extra = '';
   if (!problems.length) return 'ok';
+  if (check.pre) {
+    const res = await addDestinations(env, check).catch(e => ({ added: [], failed: String(e.message || e) }));
+    problems = destProblems(check, await readChannels(env));
+    if (res.added.length && !problems.length) {
+      await notify(`✅ ${check.label} starts in 30 min: turned on ${res.added.join(', ')} in Restream for Go Live at ${check.pre}.`, 'restream,destinations');
+      return 'added';
+    }
+    if (res.failed) extra = ` I couldn't turn ${problems.length > 1 ? 'them' : 'it'} on automatically (${res.failed}).`;
+  }
   if (check.remove) {
     const res = await removeDestinations(env, check).catch(e => ({ removed: [], failed: String(e.message || e) }));
     problems = destProblems(check, await readChannels(env));
@@ -381,12 +449,71 @@ async function checkDestinations(env, ts) {
     if (res.failed) extra = ` I couldn't turn them off automatically: ${res.failed}.`;
   }
   const msg = check.pre
-    ? `⏰ ${check.label} starts in 30 min: ${problems.join(', ')} in Restream. Turn ${problems.length > 1 ? 'them' : 'it'} on before Go Live at ${check.pre}.`
+    ? `⏰ ${check.label} starts in 30 min: ${problems.join(', ')} in Restream. Turn ${problems.length > 1 ? 'them' : 'it'} on before Go Live at ${check.pre}.${extra}`
     : check.on
     ? `⚠️ ${check.label}: Restream destination problem: ${problems.join(', ')}. Viewers there can't see the stream.`
     : `⚠️ ${check.label} is over but ${problems.join(', ')} in Restream. Turn ${problems.length > 1 ? 'them' : 'it'} off so the ATEM can't broadcast by accident.${extra}`;
   await notify(msg, 'restream,destinations');
   return 'alerted';
+}
+
+// ---------- Emergency phone call (ntfy places the call to Ilan's verified number) ----------
+// Calls once per service if (a) viewers see nothing: ATEM and OBS both off for 3+ minutes after Go Live, or
+// (b) the church Mac has sent nothing for 5+ minutes during a service. ntfy allows 3 calls a day on this plan.
+async function checkEmergency(env, ts) {
+  const now = denverClock(ts), t = ts / 1000;
+  const svc = SERVICES.find(x => x.day === now.day && now.min >= x.start - 10 + 3 && now.min < x.end);
+  if (!svc || skipped(ts)) return 'not in a service';
+  const series = await statusSeries();
+  const last = series[series.length - 1];
+  let kind = null, msg = '';
+  if (!last || t - last.time > 300) { kind = 'silent'; msg = `Abundant stream emergency. The church Mac has sent no status for 5 minutes during the ${svc.label} service. It may be off, frozen or offline.`; }
+  else {
+    const recent = series.filter(x => x.time >= t - 210);
+    if (recent.length >= 3 && recent.every(x => !atemOn(x.j) && !obsOn(x.j))) { kind = 'down'; msg = `Abundant stream emergency. The stream has been down for 3 minutes during the ${svc.label} service. Both the ATEM and OBS are off.`; }
+  }
+  if (!kind) return 'ok';
+  const key = 'call_' + denverDate(ts) + '_' + svc.key;
+  if (await env.STATE.get(key)) return 'already called';
+  await env.STATE.put(key, kind, { expirationTtl: 86400 });
+  await notify('📞 ' + msg, 'rotating_light,emergency', { Call: 'yes', Priority: 'urgent' });
+  return 'called';
+}
+
+// ---------- Service history: one summary per service, kept for the status page ----------
+// During each service the worker notes YouTube's peak viewers every 5 minutes; 10 minutes after it ends, it
+// writes a summary from Companion's minute-by-minute status reports.
+async function trackService(env, ts) {
+  const now = denverClock(ts);
+  const svc = SERVICES.find(x => x.day === now.day && now.min >= x.start && now.min < x.end);
+  if (!svc || skipped(ts) || now.min % 5 || !env.YOUTUBE_API_KEY) return 'nothing due';
+  const yt = await youtubeStatus(env, ts).catch(() => null);
+  const key = 'svc_' + denverDate(ts) + '_' + svc.key;
+  const cur = JSON.parse(await env.STATE.get(key) || '{}');
+  if (yt && yt.live) { cur.yt = true; if (yt.viewers != null) cur.peak = Math.max(cur.peak || 0, yt.viewers); }
+  await env.STATE.put(key, JSON.stringify(cur), { expirationTtl: 2 * 86400 });
+  return 'tracked';
+}
+async function writeHistory(env, ts) {
+  const now = denverClock(ts);
+  const svc = SERVICES.find(x => x.day === now.day && now.min === x.end + 10);
+  if (!svc || skipped(ts)) return 'nothing due';
+  const date = denverDate(ts), dayStart = ts / 1000 - now.min * 60;
+  const from = dayStart + (svc.start - 10) * 60, to = dayStart + svc.end * 60;
+  const rows = (await statusSeries()).filter(x => x.time >= from && x.time <= to && x.j.live === '1');
+  const firstLive = rows.find(x => atemOn(x.j) || obsOn(x.j));
+  const onTime = !!firstLive && firstLive.time <= dayStart + (svc.start + 2) * 60;
+  const atemDown = rows.filter(x => !atemOn(x.j)).length, bothDown = rows.filter(x => !atemOn(x.j) && !obsOn(x.j)).length;
+  const buffer = rows.reduce((mx, x) => Math.max(mx, parseFloat(x.j.atem_cache) || 0), 0);
+  const recMissing = rows.filter(x => x.j.obs_rec === 'Stopped').length;
+  const cur = JSON.parse(await env.STATE.get('svc_' + date + '_' + svc.key) || '{}');
+  const alerts = (await poll(ALERT_TOPIC)).filter(m => m.time >= from && m.time <= to + 600 && /^⚠️|^📞/.test(m.message || '')).length;
+  const entry = { date, label: svc.label, reports: rows.length, onTime, atemDownMin: atemDown, bothDownMin: bothDown, bufferPeak: Math.round(buffer), recordingGapMin: recMissing, youtube: !!cur.yt, peakViewers: cur.peak || null, alerts,
+    ok: rows.length > 0 && onTime && bothDown === 0 && alerts === 0 };
+  const hist = JSON.parse(await env.STATE.get('history') || '[]').filter(h => !(h.date === date && h.label === svc.label));
+  hist.unshift(entry);
+  await env.STATE.put('history', JSON.stringify(hist.slice(0, 20)));
+  return 'written';
 }
 
 // Restart reminders: Ilan restarts the church Mac by hand before each service day. Companion starts with the
@@ -408,7 +535,7 @@ async function macUptime(ts) {
 async function checkRestartReminder(ts) {
   const now = denverClock(ts);
   const r = RESTART_REMINDERS.find(x => x.day === now.day && x.min === now.min);
-  if (!r) return 'nothing due';
+  if (!r || skipped(ts)) return 'nothing due';
   const up = await macUptime(ts);
   if (up === null || up < 24 * 3600) return 'ok';
   await notify(r.msg.replace('{up}', upText(up)), 'arrows_counterclockwise,restart');
@@ -424,6 +551,9 @@ export default {
     if (env.STATE && env.RESTREAM_CLIENT_ID) jobs.push(refreshIfNeeded(env).then(() => checkDestinations(env, event.scheduledTime || Date.now())));
     jobs.push(checkRestartReminder(event.scheduledTime || Date.now()));
     if (env.STATE) jobs.push(checkYouTube(env, event.scheduledTime || Date.now()));
+    if (env.STATE) jobs.push(checkEmergency(env, event.scheduledTime || Date.now()));
+    if (env.STATE) jobs.push(trackService(env, event.scheduledTime || Date.now()));
+    if (env.STATE) jobs.push(writeHistory(env, event.scheduledTime || Date.now()));
     if (min % 5 === 0) jobs.push(checkHeartbeat(false).then(
       r => env.STATE && env.STATE.put('hb_last', JSON.stringify({ at: new Date().toISOString(), ok: true, action: r.action })),
       e => env.STATE && env.STATE.put('hb_last', JSON.stringify({ at: new Date().toISOString(), ok: false, error: String(e && e.message || e) }))));
@@ -435,6 +565,7 @@ export default {
     const path = new URL(req.url).pathname;
     if (path === '/restream/status') return restreamStatus(req, env, ctx);
     if (path === '/youtube/status') return youtubeRoute(req, env, ctx);
+    if (path === '/history') return new Response(await env.STATE.get('history') || '[]', { headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json', 'cache-control': 'public, max-age=300' } });
     if (path === '/youtube/test') {
       // One 1-unit call to confirm the key works: reads the channel's public name.
       if (!env.YOUTUBE_API_KEY) return Response.json({ configured: false });
