@@ -278,7 +278,7 @@ async function ytGet(env, path) {
   if (!r.ok) throw new Error('YouTube API ' + r.status + ' ' + ((j.error && j.error.message) || '').slice(0, 120));
   return j;
 }
-async function youtubeStatus(env, ts) {
+async function youtubeStatus(env, ts, force) {
   if (!env.YOUTUBE_API_KEY) return { configured: false };
   const now = denverClock(ts), t = Math.floor(ts / 1000);
   const inWindow = YT_WINDOWS.some(([d, a, b]) => d === now.day && now.min >= a && now.min < b);
@@ -291,7 +291,7 @@ async function youtubeStatus(env, ts) {
     await env.STATE.delete('yt_live');
   }
   const last = Number(await env.STATE.get('yt_search_at') || 0);
-  if (t - last < 300) return { configured: true, inWindow: true, live: false, nextSearch: last + 300 };
+  if (!force && t - last < 300) return { configured: true, inWindow: true, live: false, nextSearch: last + 300 };
   await env.STATE.put('yt_search_at', String(t), { expirationTtl: 3600 });
   const j = await ytGet(env, 'search?part=snippet&channelId=' + YT_CHANNEL + '&eventType=live&type=video&maxResults=1');
   const hit = (j.items || [])[0];
@@ -334,14 +334,13 @@ async function checkYouTube(env, ts) {
   const now = denverClock(ts);
   const c = YT_CHECKS.find(x => x.day === now.day && x.min === now.min);
   if (!c || !env.YOUTUBE_API_KEY || skipped(ts)) return 'nothing due';
-  await env.STATE.delete('yt_search_at'); // allow a fresh search right now
   const svc = SERVICES.find(x => x.label === c.label);
   if (svc && svc.spanish) {
     const es = await spanishStatus(env, ts).catch(() => null);
     if (es && es.inWindow && !es.live && !es.noLink) await notify(`⚠️ ${c.label}: the Spanish YouTube stream isn't live yet. Check the Spanish Mac's OBS and the Spanish YouTube event (Auto-start on).`, 'youtube,warning');
   }
   let st;
-  try { st = await youtubeStatus(env, ts); } catch (e) { await notify(`⚠️ ${c.label}: couldn't check YouTube (${String(e.message || e).slice(0, 80)}). Streaming is not affected.`, 'youtube,warning'); return 'error'; }
+  try { st = await youtubeStatus(env, ts, true); } catch (e) { await notify(`⚠️ ${c.label}: couldn't check YouTube (${String(e.message || e).slice(0, 80)}). Streaming is not affected.`, 'youtube,warning'); return 'error'; }
   if (st.live) return 'live';
   await notify(`⚠️ ${c.label}: YouTube isn't showing the stream yet. The encoders may be fine; check Restream's YouTube destination and the channel's live page.`, 'youtube,warning');
   return 'alerted';
@@ -361,12 +360,13 @@ const DEST_CHECKS = [
   { day: 3, min: 18 * 60, label: 'Wed 6:30', pre: '6:20', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
   { day: 0, min: 9 * 60, label: 'Sun 9:00', on: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM } },
   // KTSM comes off at 10:30: after the 9:00 service stops (10:25) and before the 10:45 Go Live (10:35).
-  { day: 0, min: 10 * 60 + 30, label: 'Sun 9:00', off: { KTSM }, remove: 'listed' },
+  // First try at 10:27 (the stream stops by 10:26), retried every minute to 10:34; alert at 10:30 if it's still on.
+  { day: 0, min: 10 * 60 + 27, alertAt: 10 * 60 + 30, until: 10 * 60 + 34, label: 'Sun 9:00', off: { KTSM }, remove: 'listed' },
   { day: 0, min: 10 * 60 + 40, label: 'Sun 10:45', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
   { day: 0, min: 12 * 60 + 25, label: 'Sun 12:30', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
-  { day: 0, min: 14 * 60 + 10, label: 'Sunday', off: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM }, remove: 'all' },
+  { day: 0, min: 14 * 60 + 10, until: 14 * 60 + 20, label: 'Sunday', off: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM }, remove: 'all' },
   { day: 3, min: 18 * 60 + 30, label: 'Wed 6:30', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
-  { day: 3, min: 20 * 60 + 10, label: 'Wednesday', off: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM }, remove: 'all' },
+  { day: 3, min: 20 * 60 + 10, until: 20 * 60 + 20, label: 'Wednesday', off: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM }, remove: 'all' },
 ];
 function denverClock(ts) {
   const p = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(new Date(ts));
@@ -409,6 +409,7 @@ async function addDestinations(env, check) {
   const ev = await readEvent(env);
   if (!ev) return { added: [], failed: 'no reusable Restream stream found' };
   if (ev.live) return { added: [], failed: 'a stream is already in progress' };
+  if (ev.count > 1) return { added: [], failed: 'there are ' + ev.count + ' unscheduled streams in Restream and I can\'t tell which one the ATEM feeds' };
   const r = await rsGet(env, '/v2/user/channel/all');
   const names = await platformNames(env);
   const chans = (Array.isArray(r.body) ? r.body : []).map(c => ({ id: c.id, name: c.displayName, platform: names[c.streamingPlatformId] || '', platformId: c.streamingPlatformId }));
@@ -429,7 +430,7 @@ async function addDestinations(env, check) {
 }
 async function checkDestinations(env, ts) {
   const now = denverClock(ts);
-  const check = DEST_CHECKS.find(c => c.day === now.day && c.min === now.min);
+  const check = DEST_CHECKS.find(c => c.day === now.day && now.min >= c.min && now.min <= (c.until || c.min));
   if (!check || skipped(ts) || !(await env.STATE.get('restream_tokens'))) return 'nothing due';
   let problems = destProblems(check, await readChannels(env));
   let extra = '';
@@ -450,7 +451,10 @@ async function checkDestinations(env, ts) {
       await notify(`✅ ${check.label} is over: turned off ${res.removed.join(', ')} in Restream.`, 'restream,destinations');
       return 'removed';
     }
-    if (res.failed) extra = ` I couldn't turn them off automatically: ${res.failed}.`;
+    if (res.failed) extra = ` I couldn't turn ${problems.length > 1 ? 'them' : 'it'} off automatically: ${res.failed}.`;
+    // Retry minutes stay quiet: one alert at the set time, then a ✅ if a later try succeeds.
+    if (now.min !== (check.alertAt || check.min)) return 'retrying';
+    if (check.until) extra += ` Still trying until ${Math.floor(check.until / 60) % 12 || 12}:${String(check.until % 60).padStart(2, '0')}.`;
   }
   const msg = check.pre
     ? `⏰ ${check.label} starts in 30 min: ${problems.join(', ')} in Restream. Turn ${problems.length > 1 ? 'them' : 'it'} on before Go Live at ${check.pre}.${extra}`
@@ -468,14 +472,15 @@ async function checkEmergency(env, ts) {
   const now = denverClock(ts), t = ts / 1000;
   const svc = SERVICES.find(x => x.day === now.day && now.min >= x.start - 10 + 3 && now.min < x.end);
   if (!svc || skipped(ts)) return 'not in a service';
-  const series = await statusSeries('10m');
+  const series = await statusSeries('20m');
   const last = series[series.length - 1];
   let kind = null, msg = '';
   const pendKey = 'silent_' + denverDate(ts) + '_' + svc.key;
   if (!last || t - last.time > 300) {
     // Confirm silence on two consecutive minutes so one empty read from ntfy can't place a call.
     if (!(await env.STATE.get(pendKey))) { await env.STATE.put(pendKey, '1', { expirationTtl: 240 }); return 'silent, confirming'; }
-    kind = 'silent'; msg = `Abundant stream emergency. The church Mac has sent no status for 5 minutes during the ${svc.label} service. It may be off, frozen or offline.`; }
+    kind = last && last.j.live !== '1' ? 'notstarted' : 'silent';
+    if (kind === 'notstarted') msg = `Abundant stream emergency. The ${svc.label} service has not gone live. Companion is running but did not start the stream.`; else msg = `Abundant stream emergency. The church Mac has sent no status for 5 minutes during the ${svc.label} service. It may be off, frozen or offline.`; }
   else {
     const recent = series.filter(x => x.time >= t - 210);
     if (recent.length >= 3 && recent.every(x => !atemOn(x.j) && !obsOn(x.j))) { kind = 'down'; msg = `Abundant stream emergency. The stream has been down for 3 minutes during the ${svc.label} service. Both the ATEM and OBS are off.`; }
