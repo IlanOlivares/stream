@@ -17,8 +17,8 @@ mkdir -p "$HOME/Library/Scripts" "$HOME/Library/LaunchAgents" "$HOME/Library/Log
 
 cat > "$SCRIPT" <<'SH'
 #!/bin/bash
-# Daily clean OBS restart. Quits OBS normally (never force-kills, which would trigger Safe Mode),
-# then reopens it with the shutdown check off so no Safe Mode prompt can block an unattended start.
+# Daily clean OBS restart. Quits OBS normally (never force-kills): a clean quit means OBS reopens without
+# the Safe Mode prompt. --disable-shutdown-check only matters on OBS 30-31 (32 removed it and ignores it).
 LOG="$HOME/Library/Logs/obs-restart.log"
 echo "$(date '+%F %T') restart starting" >> "$LOG"
 if pgrep -x obs >/dev/null; then
