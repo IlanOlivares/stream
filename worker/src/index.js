@@ -328,6 +328,32 @@ async function checkDestinations(env, ts) {
   return 'alerted';
 }
 
+// Restart reminders: Ilan restarts the church Mac by hand before each service day. Companion starts with the
+// Mac, so its uptime stands in for the Mac's. Reminds if the Mac hasn't restarted in the last 24 hours.
+const RESTART_REMINDERS = [
+  { day: 3, min: 9 * 60, msg: "🔄 Restart the church Mac before tonight's 6:30 service (it hasn't restarted in {up}). Apple menu → Restart, with \"Reopen windows\" unchecked." },
+  { day: 3, min: 15 * 60, msg: '🔄 Reminder: the church Mac still hasn\'t restarted today (up {up}). Tonight\'s service is at 6:30.' },
+  { day: 6, min: 21 * 60, msg: "🔄 Restart the church Mac before Sunday's services (it hasn't restarted in {up}). Apple menu → Restart, with \"Reopen windows\" unchecked." },
+  { day: 0, min: 7 * 60, msg: '🔄 Reminder: the church Mac still hasn\'t restarted (up {up}). The 9:00 health check is at 8:30.' },
+];
+function upText(sec) { const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600); return d ? `${d} day${d > 1 ? 's' : ''}${h ? ' ' + h + ' h' : ''}` : `${h} h`; }
+async function macUptime(ts) {
+  const status = await poll(STATUS_TOPIC);
+  for (const m of status.sort((a, b) => b.time - a.time)) {
+    try { const j = JSON.parse(m.message); const up = Number(j.comp_up); if (!isNaN(up) && j.t) return up + (ts / 1000 - Number(j.t)); } catch {}
+  }
+  return null; // no report in 12 h: the dead man's switch already covers that
+}
+async function checkRestartReminder(ts) {
+  const now = denverClock(ts);
+  const r = RESTART_REMINDERS.find(x => x.day === now.day && x.min === now.min);
+  if (!r) return 'nothing due';
+  const up = await macUptime(ts);
+  if (up === null || up < 24 * 3600) return 'ok';
+  await notify(r.msg.replace('{up}', upText(up)), 'arrows_counterclockwise,restart');
+  return 'reminded';
+}
+
 export default {
   // Runs every minute: renew the Restream sign-in when needed; heartbeat check every 5 minutes.
   async scheduled(event, env, ctx) {
@@ -335,6 +361,7 @@ export default {
     const min = new Date(event.scheduledTime || Date.now()).getUTCMinutes();
     const jobs = [];
     if (env.STATE && env.RESTREAM_CLIENT_ID) jobs.push(refreshIfNeeded(env).then(() => checkDestinations(env, event.scheduledTime || Date.now())));
+    jobs.push(checkRestartReminder(event.scheduledTime || Date.now()));
     if (min % 5 === 0) jobs.push(checkHeartbeat(false).then(
       r => env.STATE && env.STATE.put('hb_last', JSON.stringify({ at: new Date().toISOString(), ok: true, action: r.action })),
       e => env.STATE && env.STATE.put('hb_last', JSON.stringify({ at: new Date().toISOString(), ok: false, error: String(e && e.message || e) }))));
