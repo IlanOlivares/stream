@@ -127,8 +127,9 @@ async function restreamRoute(req, env, path) {
   if (!env.RESTREAM_CLIENT_ID || !env.RESTREAM_CLIENT_SECRET) return html('<h2>Not set up</h2><p>Add RESTREAM_CLIENT_ID and RESTREAM_CLIENT_SECRET in Cloudflare first.</p>', 503);
   const url = new URL(req.url);
   if (path === '/restream/connect') {
-    // Only allowed while not connected, so nobody else can swap in their account.
-    if (await env.STATE.get('restream_tokens') && url.searchParams.get('force') !== '1') return html('<h2>Already connected</h2><p><a style="color:#2fd27a" href="/restream/test">Run the test</a></p>');
+    // Only allowed while not connected, so nobody else can swap in their account. To reconnect on purpose,
+    // delete the restream_tokens key in the worker's KV storage (Cloudflare dashboard) first.
+    if (await env.STATE.get('restream_tokens')) return html('<h2>Already connected</h2><p><a style="color:#2fd27a" href="/restream/test">Run the test</a></p>');
     const state = crypto.randomUUID();
     await env.STATE.put('oauth_state', state, { expirationTtl: 600 });
     const q = new URLSearchParams({ response_type: 'code', client_id: env.RESTREAM_CLIENT_ID, redirect_uri: callbackUrl(req), state });
@@ -174,6 +175,15 @@ async function restreamRoute(req, env, path) {
         }
       } catch (e) { rows.push(`<h3>${esc(p)}</h3><pre>${esc(e.message)}</pre>`); }
     }
+    // Write-permission probe: a delete with a deliberately invalid id changes nothing. 400 = allowed, 401/403 = not.
+    try {
+      const ev = await readEvent(env);
+      if (ev && !ev.live) {
+        const t = await accessToken(env);
+        const r = await fetch(RS_API + '/v2/user/events/' + ev.id + '/destinations/not-a-uuid', { method: 'DELETE', headers: { authorization: 'Bearer ' + t } });
+        rows.push(`<h3>Write permission probe → HTTP ${r.status}</h3><pre>${esc((await r.text()).slice(0, 300))}</pre>`);
+      } else rows.push('<h3>Write permission probe skipped</h3><p>' + (ev ? 'A stream is in progress.' : 'No reusable stream found.') + '</p>');
+    } catch (e) { rows.push('<h3>Write permission probe</h3><pre>' + esc(e.message) + '</pre>'); }
     try { rows.push('<h3>As the status page will see it</h3><ul>' + (await readChannels(env)).map(c => `<li>${esc(c.platform)} · ${esc(c.name)}: <b>${c.enabled ? 'ON' : 'off'}</b></li>`).join('') + '</ul>'); } catch (e) { rows.push('<pre>' + esc(e.message) + '</pre>'); }
     return html('<h2>Restream test</h2>' + rows.join(''));
   }
@@ -194,14 +204,19 @@ async function platformNames(env) {
 // Restream's newer app chooses destinations per stream (event) instead of global on/off switches, and the
 // old "enabled" flag no longer follows it. So: if a stream is in progress or set up as upcoming, a destination
 // counts as on when that stream includes it; with no stream set up, fall back to the old flag.
+// A stream in progress counts whatever it is. Otherwise only the reusable live stream counts (the one the
+// ATEM feeds, no scheduled time); scheduled events such as Saturday's replay upload are ignored until they run.
 async function readEvent(env) {
   for (const p of ['/v2/user/events/in-progress', '/v2/user/events/upcoming']) {
     const r = await rsGet(env, p);
-    const list = Array.isArray(r.body) ? r.body : [];
-    if (r.status !== 200 || !list.length) continue;
+    let list = Array.isArray(r.body) ? r.body : [];
+    if (r.status !== 200) continue;
+    if (!p.includes('in-progress')) list = list.filter(e => !e.scheduledFor && !e.isRecordOnly);
+    if (!list.length) continue;
     const ev = list.find(e => e.isInstant) || list[0];
     const ids = new Set(); list.forEach(e => (e.destinations || []).forEach(d => ids.add(String(d.channelId))));
-    return { title: ev.title || '', live: p.includes('in-progress'), ids, count: list.length };
+    return { id: ev.id, title: ev.title || '', live: p.includes('in-progress'), ids, count: list.length,
+      dests: list.flatMap(e => (e.destinations || []).map(d => ({ event: e.id, id: d.id, channelId: String(d.channelId) }))) };
   }
   return null;
 }
