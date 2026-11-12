@@ -292,7 +292,7 @@ async function removeDestinations(env, check) {
   const r = await rsGet(env, '/v2/user/channel/all');
   const names = await platformNames(env);
   const chans = Object.fromEntries((Array.isArray(r.body) ? r.body : []).map(c => [String(c.id), { name: c.displayName, platform: names[c.streamingPlatformId] || '' }]));
-  const label = c => c ? (/custom/i.test(c.platform) ? c.name : c.platform.replace(/^Youtube$/, 'YouTube')) : 'a destination';
+  const label = c => c ? ((/custom/i.test(c.platform) || !c.platform) ? c.name : c.platform.replace(/^Youtube$/, 'YouTube')) : 'a destination';
   const want = ev.dests.filter(d => check.remove === 'all' || Object.values(check.off).some(m => chans[d.channelId] && m({ ...chans[d.channelId], enabled: true })));
   const t = await accessToken(env), removed = [];
   let failed = null;
