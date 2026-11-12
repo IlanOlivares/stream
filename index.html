@@ -261,7 +261,7 @@
       <div class="ph"><h2>Church Mac</h2><span class="note" id="mac-note"></span></div>
       <div class="health" id="health">
         <div class="hrow" id="t-obsapp"><div class="top"><span class="lbl">OBS</span><span class="state">—</span></div><div class="sub"></div><div class="meta"></div></div>
-        <div class="hrow" id="t-mac"><div class="top"><span class="lbl">Companion</span><span class="state">—</span></div><div class="sub"></div><div class="meta"></div></div>
+        <div class="hrow" id="t-mac"><div class="top"><span class="lbl">Last restart</span><span class="state">—</span></div><div class="sub"></div><div class="meta"></div></div>
       </div>
     </section>
   </div>
@@ -313,7 +313,7 @@
       [hm(8,52), 'Spanish go live', 'Reload the Restream pull, Spanish stream starts at 8:55'],
       [hm(9,0), 'Live check', 'Everything streaming and recording'],
       [hm(10,25), 'End', 'Fade to still, stop everything'],
-      [hm(10,30), 'KTSM off', 'The cloud worker removes KTSM from the Restream stream']] },
+      [hm(10,30), 'KTSM off', 'The cloud worker turns KTSM off in Restream']] },
     { day: 0, start: hm(10,45), end: hm(12,10), label: 'Sunday 10:45 am', key: 'sun1045', spanish: false, steps: [
       [hm(10,15), 'Health check', 'Encoders connected, Restream destinations on, disk space'],
       [hm(10,35), 'Go live', 'ATEM streams, OBS records; OBS backup streams a minute later'],
@@ -325,7 +325,7 @@
       [hm(12,25), 'Live check', 'Everything streaming and recording'],
       [hm(14,0), 'End', 'Fade to still, stop streaming and recording'],
       [hm(14,5), 'Wrap-up', 'Confirm everything stopped'],
-      [hm(14,10), 'Destinations off', 'The cloud worker removes all Restream destinations']] },
+      [hm(14,10), 'Destinations off', 'The cloud worker turns all Restream destinations off']] },
     { day: 3, start: hm(18,30), end: hm(20,0), label: 'Wednesday 6:30 pm', key: 'wed', spanish: true, steps: [
       [hm(18,0), 'Health check', 'Encoders connected, Restream destinations on, disk space'],
       [hm(18,20), 'Go live', 'ATEM streams, OBS records; OBS backup streams a minute later'],
@@ -333,7 +333,7 @@
       [hm(18,30), 'Live check', 'Everything streaming and recording'],
       [hm(20,0), 'End', 'Fade to still, stop everything'],
       [hm(20,5), 'Wrap-up', 'Confirm everything stopped'],
-      [hm(20,10), 'Destinations off', 'The cloud worker removes all Restream destinations']] },
+      [hm(20,10), 'Destinations off', 'The cloud worker turns all Restream destinations off']] },
     { day: 6, start: hm(17,0), end: hm(18,30), label: 'Saturday 5:00 pm replay', key: 'sat', spanish: false, replay: true, steps: [
       [hm(16,50), 'Replay starts', 'Restream plays Wednesday\'s recording'],
       [hm(17,0), 'Service time', 'Replay is on air'],
@@ -456,7 +456,14 @@
       setMeta('t-obsapp', meta);
       var cup = num(s.comp_up), t = num(s.t), cnow = cup !== null && t ? cup + (now - t) : null;
       if (quiet) setTile('t-mac', 'bad', 'No update', 'Last report ' + ago(lastStatusTime));
-      else setTile('t-mac', 'on', cnow !== null ? 'Up ' + days(cnow) : 'Up', cnow !== null ? 'Running since ' + since(now - cnow) + '. Restarts with the Mac' : '');
+      else if (cnow === null) setTile('t-mac', 'on', 'Up', '');
+      else {
+        // Same rule as the worker's restart reminders: before a service day, restart if up 24 h or more.
+        var nd = nowDenver(), nm = nd.sec / 60;
+        var due = cnow >= 86400 && !live && !inServiceWindow() && ((nd.day === 3 && nm >= 540 && nm < 1200) || (nd.day === 6 && nm >= 1260) || (nd.day === 0 && nm < 840));
+        setTile('t-mac', due ? 'bad' : 'on', due ? 'Restart due' : days(cnow) + ' ago',
+          'Last restart ' + since(now - cnow) + (due ? '. Restart before the next service: Apple menu → Restart' : ''));
+      }
       setMeta('t-mac', []);
       text('mac-note', 'Last report ' + ago(lastStatusTime));
     }
@@ -719,7 +726,7 @@
   }
 
   // One-line verdict: everything that needs attention, in plain words, at the top of the page.
-  var NODE_NAMES = { 't-atem': 'ATEM', 't-obs': 'OBS backup', 't-rec': 'OBS recording', 't-sp': 'Spanish stream', 't-hd': 'HyperDeck', 't-obsapp': 'OBS app', 't-mac': 'Companion' };
+  var NODE_NAMES = { 't-atem': 'ATEM', 't-obs': 'OBS backup', 't-rec': 'OBS recording', 't-sp': 'Spanish stream', 't-hd': 'HyperDeck', 't-obsapp': 'OBS app', 't-mac': 'Church Mac' };
   function renderVerdict() {
     var v = $('verdict'), now = Date.now() / 1000, age = lastStatusTime ? now - lastStatusTime : null, problems = [];
     var old = age !== null && age > HEARD_WARN;
