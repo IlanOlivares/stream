@@ -127,9 +127,11 @@ async function restreamRoute(req, env, path) {
   if (!env.RESTREAM_CLIENT_ID || !env.RESTREAM_CLIENT_SECRET) return html('<h2>Not set up</h2><p>Add RESTREAM_CLIENT_ID and RESTREAM_CLIENT_SECRET in Cloudflare first.</p>', 503);
   const url = new URL(req.url);
   if (path === '/restream/connect') {
-    // Only allowed while not connected, so nobody else can swap in their account. To reconnect on purpose,
-    // delete the restream_tokens key in the worker's KV storage (Cloudflare dashboard) first.
-    if (await env.STATE.get('restream_tokens')) return html('<h2>Already connected</h2><p><a style="color:#2fd27a" href="/restream/test">Run the test</a></p>');
+    // Only allowed while not connected (or connected without the write permission the worker now needs),
+    // so nobody else can swap in their account. To reconnect on purpose otherwise, delete the restream_tokens
+    // key in the worker's KV storage (Cloudflare dashboard) first.
+    const scope = await env.STATE.get('rs_scope') || '';
+    if (await env.STATE.get('restream_tokens') && scope.includes('stream.write')) return html('<h2>Already connected</h2><p><a style="color:#2fd27a" href="/restream/test">Run the test</a></p>');
     const state = crypto.randomUUID();
     await env.STATE.put('oauth_state', state, { expirationTtl: 600 });
     const q = new URLSearchParams({ response_type: 'code', client_id: env.RESTREAM_CLIENT_ID, redirect_uri: callbackUrl(req), state });
@@ -143,7 +145,9 @@ async function restreamRoute(req, env, path) {
     }
     if (!state || state !== await env.STATE.get('oauth_state')) return html('<h2>Link expired</h2><p>Start again from /restream/connect.</p>', 400);
     await env.STATE.delete('oauth_state');
-    await saveTokens(env, await tokenRequest(env, { grant_type: 'authorization_code', redirect_uri: callbackUrl(req), code }));
+    const tok = await tokenRequest(env, { grant_type: 'authorization_code', redirect_uri: callbackUrl(req), code });
+    await saveTokens(env, tok);
+    await env.STATE.put('rs_scope', url.searchParams.get('scope') || tok.scope || '');
     return Response.redirect(new URL('/restream/test', req.url).toString(), 302);
   }
   if (path === '/restream/test') {
@@ -255,12 +259,13 @@ const DEST_CHECKS = [
   { day: 0, min: 12 * 60, label: 'Sun 12:30', pre: '12:20', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
   { day: 3, min: 18 * 60, label: 'Wed 6:30', pre: '6:20', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
   { day: 0, min: 9 * 60, label: 'Sun 9:00', on: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM } },
-  { day: 0, min: 10 * 60 + 35, label: 'Sun 9:00', off: { KTSM } },
+  // KTSM comes off at 10:30: after the 9:00 service stops (10:25) and before the 10:45 Go Live (10:35).
+  { day: 0, min: 10 * 60 + 30, label: 'Sun 9:00', off: { KTSM }, remove: 'listed' },
   { day: 0, min: 10 * 60 + 40, label: 'Sun 10:45', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
   { day: 0, min: 12 * 60 + 25, label: 'Sun 12:30', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
-  { day: 0, min: 14 * 60 + 10, label: 'Sunday', off: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM } },
+  { day: 0, min: 14 * 60 + 10, label: 'Sunday', off: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM }, remove: 'all' },
   { day: 3, min: 18 * 60 + 30, label: 'Wed 6:30', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
-  { day: 3, min: 20 * 60 + 10, label: 'Wednesday', off: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM } },
+  { day: 3, min: 20 * 60 + 10, label: 'Wednesday', off: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM }, remove: 'all' },
 ];
 function denverClock(ts) {
   const p = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(new Date(ts));
@@ -279,17 +284,46 @@ function destProblems(check, channels) {
   }
   return out;
 }
+// After a service: take destinations off the reusable live stream so the ATEM can't broadcast by accident.
+// 'all' removes every destination; 'listed' only the ones named in the check. Needs Restream's stream.write.
+async function removeDestinations(env, check) {
+  const ev = await readEvent(env);
+  if (!ev || ev.live || !ev.dests.length) return { removed: [], failed: ev && ev.live ? 'a stream is still in progress' : null };
+  const r = await rsGet(env, '/v2/user/channel/all');
+  const names = await platformNames(env);
+  const chans = Object.fromEntries((Array.isArray(r.body) ? r.body : []).map(c => [String(c.id), { name: c.displayName, platform: names[c.streamingPlatformId] || '' }]));
+  const label = c => c ? (/custom/i.test(c.platform) ? c.name : c.platform.replace(/^Youtube$/, 'YouTube')) : 'a destination';
+  const want = ev.dests.filter(d => check.remove === 'all' || Object.values(check.off).some(m => chans[d.channelId] && m({ ...chans[d.channelId], enabled: true })));
+  const t = await accessToken(env), removed = [];
+  let failed = null;
+  for (const d of want) {
+    const res = await fetch(RS_API + '/v2/user/events/' + d.event + '/destinations/' + d.id, { method: 'DELETE', headers: { authorization: 'Bearer ' + t } });
+    if (res.status === 204 || res.status === 404) removed.push(label(chans[d.channelId]));
+    else { failed = 'Restream said ' + res.status + (res.status === 403 ? ' (the worker needs write permission)' : ''); break; }
+  }
+  return { removed, failed };
+}
 async function checkDestinations(env, ts) {
   const now = denverClock(ts);
   const check = DEST_CHECKS.find(c => c.day === now.day && c.min === now.min);
   if (!check || !(await env.STATE.get('restream_tokens'))) return 'nothing due';
-  const problems = destProblems(check, await readChannels(env));
+  let problems = destProblems(check, await readChannels(env));
+  let extra = '';
   if (!problems.length) return 'ok';
+  if (check.remove) {
+    const res = await removeDestinations(env, check).catch(e => ({ removed: [], failed: String(e.message || e) }));
+    problems = destProblems(check, await readChannels(env));
+    if (res.removed.length && !problems.length) {
+      await notify(`✅ ${check.label} is over: turned off ${res.removed.join(', ')} in Restream.`, 'restream,destinations');
+      return 'removed';
+    }
+    if (res.failed) extra = ` I couldn't turn them off automatically: ${res.failed}.`;
+  }
   const msg = check.pre
     ? `⏰ ${check.label} starts in 30 min: ${problems.join(', ')} in Restream. Turn ${problems.length > 1 ? 'them' : 'it'} on before Go Live at ${check.pre}.`
     : check.on
     ? `⚠️ ${check.label}: Restream destination problem: ${problems.join(', ')}. Viewers there can't see the stream.`
-    : `⚠️ ${check.label} is over but ${problems.join(', ')} in Restream. Turn ${problems.length > 1 ? 'them' : 'it'} off so the ATEM can't broadcast by accident.`;
+    : `⚠️ ${check.label} is over but ${problems.join(', ')} in Restream. Turn ${problems.length > 1 ? 'them' : 'it'} off so the ATEM can't broadcast by accident.${extra}`;
   await notify(msg, 'restream,destinations');
   return 'alerted';
 }
