@@ -312,7 +312,7 @@
       [hm(8,52), 'Spanish go live', 'Reload the Restream pull, Spanish stream starts at 8:55'],
       [hm(9,0), 'Live check', 'Everything streaming and recording'],
       [hm(10,25), 'End', 'Fade to still, stop everything'],
-      [hm(10,35), 'KTSM check', 'Alerts if KTSM is still on in Restream']] },
+      [hm(10,30), 'KTSM off', 'The cloud worker removes KTSM from the Restream stream']] },
     { day: 0, start: hm(10,45), end: hm(12,10), label: 'Sunday 10:45 am', key: 'sun1045', spanish: false, steps: [
       [hm(10,15), 'Health check', 'Encoders connected, Restream destinations on, disk space'],
       [hm(10,35), 'Go live', 'ATEM streams, OBS records; OBS backup streams a minute later'],
@@ -324,7 +324,7 @@
       [hm(12,25), 'Live check', 'Everything streaming and recording'],
       [hm(14,0), 'End', 'Fade to still, stop streaming and recording'],
       [hm(14,5), 'Wrap-up', 'Confirm everything stopped'],
-      [hm(14,10), 'Destinations off', 'Turn Restream destinations off; alerts if any are still on']] },
+      [hm(14,10), 'Destinations off', 'The cloud worker removes all Restream destinations']] },
     { day: 3, start: hm(18,30), end: hm(20,0), label: 'Wednesday 6:30 pm', key: 'wed', spanish: true, steps: [
       [hm(18,0), 'Health check', 'Encoders connected, Restream destinations on, disk space'],
       [hm(18,20), 'Go live', 'ATEM streams, OBS records; OBS backup streams a minute later'],
@@ -332,7 +332,7 @@
       [hm(18,30), 'Live check', 'Everything streaming and recording'],
       [hm(20,0), 'End', 'Fade to still, stop everything'],
       [hm(20,5), 'Wrap-up', 'Confirm everything stopped'],
-      [hm(20,10), 'Destinations off', 'Turn Restream destinations off; alerts if any are still on']] },
+      [hm(20,10), 'Destinations off', 'The cloud worker removes all Restream destinations']] },
     { day: 6, start: hm(17,0), end: hm(18,30), label: 'Saturday 5:00 pm replay', key: 'sat', spanish: false, replay: true, steps: [
       [hm(16,50), 'Replay starts', 'Restream plays Wednesday\'s recording'],
       [hm(17,0), 'Service time', 'Replay is on air'],
@@ -424,7 +424,7 @@
 
   var RESTART_DAYS = 3, RAM_WARN_MB = 3000, CPU_WARN = 60, DISK_WARN_MB = 20000, HEARD_WARN = 20 * 60;
   function days(sec) { sec = Math.max(0, sec); var d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60); return d ? d + 'd ' + h + 'h' : (h ? h + 'h ' + m + 'm' : m + 'm'); }
-  function since(ts) { return new Date(ts * 1000).toLocaleString('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: '2-digit' }); }
+  function since(ts) { return new Date(ts * 1000).toLocaleString('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: '2-digit' }).replace(/\s?([AP])M/, function (m, x) { return ' ' + x.toLowerCase() + 'm'; }); }
   function setMeta(id, items) {
     var box = $(id).querySelector('.meta'); box.replaceChildren();
     items.forEach(function (it) { var sp = document.createElement('span'); sp.append(it[0] ? it[0] + ' ' : ''); var b = document.createElement('b'); b.textContent = it[1]; sp.append(b); if (it[2]) sp.append(' ' + it[2]); box.append(sp); });
@@ -534,7 +534,7 @@
   var C_OBS = '#3987e5', C_ATEM = '#d95926';
   function renderChart() {
     var box = $('br-chart'), now = Date.now() / 1000;
-    var pts = hist.filter(function (p) { return p.t > now - 150 * 60 && (p.obs !== null || p.atem !== null); });
+    var pts = hist.filter(function (p) { return p.t > now - 150 * 60 && (p.obs !== null || p.atemOn); });
     if (pts.length < 2) { box.innerHTML = '<div class="empty">Appears during services, one point a minute.</div>'; text('br-note', 'Last 2½ hours'); return; }
     var W = Math.max(300, box.clientWidth || 600), H = 190, L = 28, R = 70, T = 10, B = 24;
     var t0 = pts[0].t, t1 = Math.max(pts[pts.length - 1].t, t0 + 600);
@@ -562,19 +562,20 @@
       return '<path d="' + d + '" fill="none" stroke="' + col + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' +
         '<text ' + f + ' x="' + (x(lastP.t) + 8) + '" y="' + (ends[key] + 4) + '" fill="var(--ink)" font-size="11">' + label + ' ' + lastP[key].toFixed(1) + '</text>';
     }
-    g += line('atem', C_ATEM, 'ATEM') + line('obs', C_OBS, 'OBS');
+    g += line('obs', C_OBS, 'OBS');
     g += '<line id="br-x" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--ink-3)" stroke-width="1" visibility="hidden"/><rect id="br-hit" x="' + L + '" y="0" width="' + (W - L - R) + '" height="' + H + '" fill="transparent"/>';
-    box.innerHTML = '<div class="lg"><span><i style="background:' + C_ATEM + '"></i>ATEM, primary</span><span><i style="background:' + C_OBS + '"></i>OBS, backup</span><span style="margin-left:auto">Mbps</span></div>' +
+    box.innerHTML = '<div class="lg"><span>OBS backup, measured upload</span><span style="margin-left:auto">Mbps</span></div>' +
       '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Upload rate of the ATEM and OBS streams over the last two and a half hours">' + g + '</svg><div class="tip"></div>';
     var last = pts[pts.length - 1];
-    text('br-note', last.cache > 10 ? 'ATEM buffer ' + Math.round(last.cache) + '%: internet not keeping up' : 'Last 2½ hours');
+    var peak = 0; pts.forEach(function (p) { if (p.cache > peak) peak = p.cache; });
+    text('br-note', last.cache > 10 ? 'ATEM buffer ' + Math.round(last.cache) + '% now: internet not keeping up' : 'ATEM buffer peak ' + Math.round(peak) + '%' + (peak > 10 ? ', briefly behind' : ', fine'));
     $('br-note').className = 'note' + (last.cache > 10 ? ' stale' : '');
     var svg = box.querySelector('svg'), tip = box.querySelector('.tip'), xl = svg.querySelector('#br-x');
     function hover(ev) {
       var r = svg.getBoundingClientRect(), cx = (ev.touches ? ev.touches[0].clientX : ev.clientX), vx = (cx - r.left) / r.width * W, best = pts[0];
       pts.forEach(function (p) { if (Math.abs(x(p.t) - vx) < Math.abs(x(best.t) - vx)) best = p; });
       xl.setAttribute('x1', x(best.t)); xl.setAttribute('x2', x(best.t)); xl.setAttribute('visibility', 'visible');
-      tip.textContent = ck(best.t) + '   ATEM ' + (best.atem === null ? 'off' : best.atem.toFixed(1)) + '   OBS ' + (best.obs === null ? 'off' : best.obs.toFixed(1)) + ' Mbps' + (best.cache > 0 ? '   buffer ' + Math.round(best.cache) + '%' : '');
+      tip.textContent = ck(best.t) + '   OBS ' + (best.obs === null ? 'off' : best.obs.toFixed(1)) + ' Mbps' + (best.cache > 0 ? '   buffer ' + Math.round(best.cache) + '%' : '');
       tip.style.display = 'block';
       var px = x(best.t) / W * r.width; tip.style.left = Math.min(Math.max(0, px - tip.offsetWidth / 2), r.width - tip.offsetWidth) + 'px'; tip.style.top = '26px';
     }
@@ -678,7 +679,7 @@
     if (histIds[msg.id]) return; histIds[msg.id] = 1;
     var obsOn = j.obs_stream && j.obs_stream !== 'Off-Air', atemOn = j.atem_stream === true || j.atem_stream === 'true';
     var k = parseFloat(j.kbps), a = parseFloat(j.atem_mbps);
-    hist.push({ t: msg.time, obs: obsOn && !isNaN(k) ? k / 1000 : null, atem: atemOn && !isNaN(a) ? a * 8 : null, cache: parseFloat(j.atem_cache) });
+    hist.push({ t: msg.time, obs: obsOn && !isNaN(k) ? k / 1000 : null, atem: null, atemOn: atemOn, cache: parseFloat(j.atem_cache) });
     hist.sort(function (x, y) { return x.t - y.t; });
     if (hist.length > 900) hist.shift();
   }
