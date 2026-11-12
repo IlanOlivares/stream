@@ -23,7 +23,7 @@
     --bg: #0e1318; --surface: #151b21; --surface-2: #1b232a; --line: #252f38; --line-2: #33404b;
     --ink: #edf1f4; --ink-2: #a3aeb8; --ink-3: #8a96a1;
     --ok: #4cc58c; --warn: #f2a93b; --tally: #ff5149; --idle: #47535e;
-    --c-atem: #d95926; --c-obs: #3987e5;
+    
     --font: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
     --r: 14px;
     color-scheme: dark;
@@ -558,26 +558,20 @@
   }
 
   // Upload-rate chart: one axis (Mbps), last 150 minutes.
-  var C_OBS = '#3987e5', C_ATEM = '#d95926';
+  var C_OBS = '#3987e5';
   function renderChart() {
     var box = $('br-chart'), now = Date.now() / 1000;
     var pts = hist.filter(function (p) { return p.t > now - 150 * 60 && (p.obs !== null || p.atemOn); });
     if (pts.length < 2) { box.innerHTML = '<div class="empty">Appears during services, one point a minute.</div>'; text('br-note', 'Last 2½ hours'); return; }
     var W = Math.max(300, box.clientWidth || 600), H = 190, L = 28, R = 70, T = 10, B = 24;
     var t0 = pts[0].t, t1 = Math.max(pts[pts.length - 1].t, t0 + 600);
-    var max = 0; pts.forEach(function (p) { max = Math.max(max, p.obs || 0, p.atem || 0); });
+    var max = 0; pts.forEach(function (p) { max = Math.max(max, p.obs || 0); });
     var top = Math.max(8, Math.ceil(max * 1.2 / 2) * 2), step = top <= 10 ? 2 : (top <= 20 ? 5 : 10);
     var x = function (t) { return L + (t - t0) / (t1 - t0) * (W - L - R); }, y = function (v) { return T + (1 - v / top) * (H - T - B); };
     var g = '', f = 'font-family="Hanken Grotesk, system-ui, sans-serif"';
     for (var v = 0; v <= top; v += step) g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(--line)" stroke-width="1"/><text ' + f + ' x="' + (L - 8) + '" y="' + (y(v) + 4) + '" text-anchor="end" fill="var(--ink-3)" font-size="11">' + v + '</text>';
     var ck = fmtTs;
     g += '<text ' + f + ' x="' + L + '" y="' + (H - 6) + '" fill="var(--ink-3)" font-size="11">' + ck(t0) + '</text><text ' + f + ' x="' + (W - R) + '" y="' + (H - 6) + '" text-anchor="end" fill="var(--ink-3)" font-size="11">' + ck(t1) + '</text>';
-    var ends = {};
-    ['atem', 'obs'].forEach(function (k) { for (var i = pts.length - 1; i >= 0; i--) if (pts[i][k] !== null) { ends[k] = y(pts[i][k]); break; } });
-    if (ends.atem !== undefined && ends.obs !== undefined && Math.abs(ends.atem - ends.obs) < 13) {
-      var mid = (ends.atem + ends.obs) / 2, up = ends.atem <= ends.obs ? 'atem' : 'obs', dn = up === 'atem' ? 'obs' : 'atem';
-      ends[up] = mid - 6.5; ends[dn] = mid + 6.5;
-    }
     function line(key, col, label) {
       var d = '', pen = false, lastP = null;
       pts.forEach(function (p, i) {
@@ -587,12 +581,12 @@
       });
       if (!d) return '';
       return '<path d="' + d + '" fill="none" stroke="' + col + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' +
-        '<text ' + f + ' x="' + (x(lastP.t) + 8) + '" y="' + (ends[key] + 4) + '" fill="var(--ink)" font-size="11">' + label + ' ' + lastP[key].toFixed(1) + '</text>';
+        '<text ' + f + ' x="' + (x(lastP.t) + 8) + '" y="' + (y(lastP[key]) + 4) + '" fill="var(--ink)" font-size="11">' + label + ' ' + lastP[key].toFixed(1) + '</text>';
     }
     g += line('obs', C_OBS, 'OBS');
     g += '<line id="br-x" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--ink-3)" stroke-width="1" visibility="hidden"/><rect id="br-hit" x="' + L + '" y="0" width="' + (W - L - R) + '" height="' + H + '" fill="transparent"/>';
     box.innerHTML = '<div class="lg"><span>OBS backup, measured upload</span><span style="margin-left:auto">Mbps</span></div>' +
-      '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Upload rate of the ATEM and OBS streams over the last two and a half hours">' + g + '</svg><div class="tip"></div>';
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Upload rate of the OBS backup stream over the last two and a half hours">' + g + '</svg><div class="tip"></div>';
     var last = pts[pts.length - 1];
     var peak = 0; pts.forEach(function (p) { if (p.cache > peak) peak = p.cache; });
     text('br-note', last.cache > 10 ? 'ATEM buffer ' + Math.round(last.cache) + '% now: internet not keeping up' : 'ATEM buffer peak ' + Math.round(peak) + '%' + (peak > 10 ? ', briefly behind' : ', fine'));
@@ -705,8 +699,8 @@
   function addHist(msg, j) {
     if (histIds[msg.id]) return; histIds[msg.id] = 1;
     var obsOn = j.obs_stream && j.obs_stream !== 'Off-Air', atemOn = j.atem_stream === true || j.atem_stream === 'true';
-    var k = parseFloat(j.kbps), a = parseFloat(j.atem_mbps);
-    hist.push({ t: msg.time, obs: obsOn && !isNaN(k) ? k / 1000 : null, atem: null, atemOn: atemOn, cache: parseFloat(j.atem_cache) });
+    var k = parseFloat(j.kbps);
+    hist.push({ t: msg.time, obs: obsOn && !isNaN(k) ? k / 1000 : null, atemOn: atemOn, cache: parseFloat(j.atem_cache) });
     hist.sort(function (x, y) { return x.t - y.t; });
     if (hist.length > 900) hist.shift();
   }
