@@ -404,30 +404,6 @@ async function removeDestinations(env, check) {
   }
   return { removed, failed };
 }
-// Before a service (the 30-minute check): attach the needed destinations to the reusable live stream.
-async function addDestinations(env, check) {
-  const ev = await readEvent(env);
-  if (!ev) return { added: [], failed: 'no reusable Restream stream found' };
-  if (ev.live) return { added: [], failed: 'a stream is already in progress' };
-  if (ev.count > 1) return { added: [], failed: 'there are ' + ev.count + ' unscheduled streams in Restream and I can\'t tell which one the ATEM feeds' };
-  const r = await rsGet(env, '/v2/user/channel/all');
-  const names = await platformNames(env);
-  const chans = (Array.isArray(r.body) ? r.body : []).map(c => ({ id: c.id, name: c.displayName, platform: names[c.streamingPlatformId] || '', platformId: c.streamingPlatformId }));
-  const attached = new Set(ev.dests.map(d => d.channelId));
-  const t = await accessToken(env), added = [];
-  for (const [name, match] of Object.entries(check.on)) {
-    const c = chans.find(x => match(x));
-    if (!c || attached.has(String(c.id))) continue;
-    const body = { channelId: c.id };
-    // YouTube needs its broadcast details passed in: use the stream's own title and description (what Update Titles
-    // set), public, with an event post, the same as adding it in Restream's app.
-    if (c.platformId === 5 || /youtube/i.test(c.platform)) Object.assign(body, { title: ev.title || 'Abundant Church', description: ev.description || '', privacyStatus: 'public', createEventPost: true });
-    const res = await fetch(RS_API + '/v2/user/events/' + ev.id + '/destinations', { method: 'POST', headers: { authorization: 'Bearer ' + t, 'content-type': 'application/json' }, body: JSON.stringify(body) });
-    if (res.ok || res.status === 409) added.push(name);
-    else return { added, failed: name + ': Restream said ' + res.status + ' ' + (await res.text()).slice(0, 120) };
-  }
-  return { added, failed: null };
-}
 async function checkDestinations(env, ts) {
   const now = denverClock(ts);
   const check = DEST_CHECKS.find(c => c.day === now.day && now.min >= c.min && now.min <= (c.until || c.min));
@@ -435,15 +411,6 @@ async function checkDestinations(env, ts) {
   let problems = destProblems(check, await readChannels(env));
   let extra = '';
   if (!problems.length) return 'ok';
-  if (check.pre) {
-    const res = await addDestinations(env, check).catch(e => ({ added: [], failed: String(e.message || e) }));
-    problems = destProblems(check, await readChannels(env));
-    if (res.added.length && !problems.length) {
-      await notify(`✅ ${check.label} starts in 30 min: turned on ${res.added.join(', ')} in Restream for Go Live at ${check.pre}.`, 'restream,destinations');
-      return 'added';
-    }
-    if (res.failed) extra = ` I couldn't turn ${problems.length > 1 ? 'them' : 'it'} on automatically (${res.failed}).`;
-  }
   if (check.remove) {
     const res = await removeDestinations(env, check).catch(e => ({ removed: [], failed: String(e.message || e) }));
     problems = destProblems(check, await readChannels(env));
@@ -535,9 +502,7 @@ async function writeHistory(env, ts) {
 // Mac, so its uptime stands in for the Mac's. Reminds if the Mac hasn't restarted in the last 24 hours.
 const RESTART_REMINDERS = [
   { day: 3, min: 9 * 60, msg: "🔄 Restart the church Mac before tonight's 6:30 service (it hasn't restarted in {up}). Apple menu → Restart, with \"Reopen windows\" unchecked." },
-  { day: 3, min: 15 * 60, msg: '🔄 Reminder: the church Mac still hasn\'t restarted today (up {up}). Tonight\'s service is at 6:30.' },
   { day: 6, min: 21 * 60, msg: "🔄 Restart the church Mac before Sunday's services (it hasn't restarted in {up}). Apple menu → Restart, with \"Reopen windows\" unchecked." },
-  { day: 0, min: 7 * 60, msg: '🔄 Reminder: the church Mac still hasn\'t restarted (up {up}). The 9:00 health check is at 8:30.' },
 ];
 function upText(sec) { const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600); return d ? `${d} day${d > 1 ? 's' : ''}${h ? ' ' + h + ' h' : ''}` : `${h} h`; }
 async function macUptime(ts) {
