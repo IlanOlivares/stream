@@ -45,6 +45,9 @@ if pgrep -x obs >/dev/null; then
   fi
 fi
 curl -s -m 8 -H "Priority: low" -d "🔄 Church Mac is restarting (scheduled). Companion and OBS should be back within 5 minutes." https://ntfy.sh/abundant-stream-k7x2q9 >/dev/null || true
+# Don't reopen whatever happened to be open (Chrome, Terminal…); only Login Items should start.
+defaults write com.apple.loginwindow TALLogoutSavesState -bool false
+defaults -currentHost delete com.apple.loginwindow TALAppsToRelaunchAtLogin >/dev/null 2>&1 || true
 say "restarting"
 sleep 3
 sudo -n /sbin/shutdown -r now
