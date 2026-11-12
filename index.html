@@ -163,6 +163,7 @@
   th { text-align: left; font-weight: 500; color: var(--ink-3); font-size: .82rem; padding: 0 10px 10px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
   td { padding: 11px 10px 11px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
   tr:last-child td { border-bottom: 0; }
+  #hist td:nth-child(-n+3) { white-space: nowrap; }
 
   /* Links */
   .links { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -174,7 +175,7 @@
   footer { color: var(--ink-3); font-size: .84rem; padding-top: 4px; }
 
   /* Order: standby leads with prep, live leads with the run sheet */
-  #s-path { order: 1; } #s-mid { order: 2; } #s-ops { order: 3; } #s-week { order: 4; } footer { order: 10; }
+  #s-path { order: 1; } #s-mid { order: 2; } #s-ops { order: 3; } #s-week { order: 4; } #s-hist { order: 5; } footer { order: 10; }
   body.live-mode #s-ops { order: 2; } body.live-mode #s-mid { order: 3; }
 
   @media (prefers-reduced-motion: reduce) { .wire.live, .tally.live i { animation: none; } }
@@ -292,6 +293,16 @@
       <div class="links" id="links"></div>
     </section>
   </div>
+
+  <section class="panel" id="s-hist" aria-label="Recent services">
+    <div class="ph"><h2>Recent services</h2><span class="note">Written 10 minutes after each service ends</span></div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Date</th><th>Service</th><th>Result</th><th>Details</th></tr></thead>
+        <tbody id="hist"><tr><td colspan="4" class="faint">The first entry appears after Sunday's 9:00 service.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
 
   <footer>Phone alerts are the primary notice. This page updates every minute during services and every 15 minutes otherwise.</footer>
 </div>
@@ -421,6 +432,9 @@
     var spOn = s.spanish && s.spanish !== 'Off-Air';
     if (s.sp_conn && s.sp_conn !== 'good') setTile('t-sp', check && spExpected ? 'bad' : '', check && spExpected ? 'Not connected' : 'Mac off', check && spExpected ? 'Companion can\'t reach the Spanish Mac' : 'Fine outside services');
     else setTile('t-sp', spOn ? 'on' : (check && spExpected ? 'bad' : ''), spOn ? 'Live' : 'Off', spOn ? s.spanish_time : (check && spExpected ? 'Should be streaming' : (live ? 'No Spanish this service' : 'Not needed now')));
+    // Spanish YouTube: confirmed live from the week's Spanish link (worker asks YouTube during Spanish services)
+    var es = yt && yt.ok && yt.es;
+    if (es && es.configured && es.inWindow && es.live) { var sub = $('t-sp').querySelector('.sub'); sub.textContent = (spOn ? s.spanish_time + ', ' : '') + 'live on YouTube' + (es.viewers != null ? ', ' + es.viewers.toLocaleString('en-US') + ' watching' : ''); }
   }
 
   var RESTART_DAYS = 3, RAM_WARN_MB = 3000, CPU_WARN = 60, DISK_WARN_MB = 20000, HEARD_WARN = 20 * 60;
@@ -500,7 +514,7 @@
       d.dataset.on = c.enabled ? '1' : '';
       // YouTube: say whether the channel is actually live (worker asks YouTube during service windows)
       if (/youtube/i.test(c.platform) && yt && yt.ok && yt.configured && yt.inWindow) {
-        if (yt.live) { d.className = 'node dest on'; d.querySelector('.state').textContent = 'Live'; d.querySelector('.sub').textContent = 'Live on YouTube now'; }
+        if (yt.live) { d.className = 'node dest on'; d.querySelector('.state').textContent = 'Live'; d.querySelector('.sub').textContent = 'Live on YouTube' + (yt.viewers != null ? ', ' + yt.viewers.toLocaleString('en-US') + ' watching' : ' now'); }
         else if (live && !stale && c.enabled) { d.className = 'node dest bad'; d.querySelector('.state').textContent = 'Not live'; d.querySelector('.sub').textContent = 'YouTube isn\'t showing the stream yet'; }
       }
       box.appendChild(d);
@@ -776,7 +790,28 @@
   load(STATUS_TOPIC, handleStatus);
   load(ALERT_TOPIC, handleAlert);
   loadRestream(); setInterval(loadRestream, 60000);
-  function loadYouTube() { fetch(YOUTUBE_URL).then(function (r) { return r.json(); }).then(function (j) { yt = j; renderRestream(); }).catch(function () {}); }
+  function loadYouTube() { fetch(YOUTUBE_URL).then(function (r) { return r.json(); }).then(function (j) { yt = j; renderRestream(); renderStatus(); }).catch(function () {}); }
+  // Recent services (written by the worker after each service)
+  function renderHistory(list) {
+    var tb = $('hist'); if (!list || !list.length) return; tb.replaceChildren();
+    list.slice(0, 8).forEach(function (h) {
+      var tr = document.createElement('tr');
+      var date = new Date(h.date + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' });
+      var notes = [];
+      notes.push(h.reports ? (h.onTime ? 'Live on time' : 'Started late') : 'No live reports');
+      notes.push(h.bothDownMin ? 'viewers saw nothing for ' + h.bothDownMin + ' min' : (h.atemDownMin ? 'on the OBS backup for ' + h.atemDownMin + ' min' : 'no outages'));
+      if (h.recordingGapMin) notes.push('OBS not recording for ' + h.recordingGapMin + ' min');
+      notes.push('ATEM buffer peak ' + h.bufferPeak + '%');
+      if (h.peakViewers) notes.push(h.peakViewers.toLocaleString('en-US') + ' peak viewers on YouTube');
+      if (h.alerts) notes.push(h.alerts + ' alert' + (h.alerts > 1 ? 's' : ''));
+      [[date, 'muted'], [h.label, '']].forEach(function (c) { var td = document.createElement('td'); td.textContent = c[0]; if (c[1]) td.className = c[1]; tr.appendChild(td); });
+      var td = document.createElement('td'), p = document.createElement('span'); p.className = 'pill ' + (h.ok ? 'p-ok' : 'p-warn'); p.textContent = h.ok ? 'Clean' : 'Issues'; td.appendChild(p); tr.appendChild(td);
+      var tn = document.createElement('td'); tn.className = 'muted'; tn.textContent = notes.join(', '); tr.appendChild(tn);
+      tb.appendChild(tr);
+    });
+  }
+  function loadHistory() { fetch(YOUTUBE_URL.replace('/youtube/status', '/history')).then(function (r) { return r.json(); }).then(renderHistory).catch(function () {}); }
+  loadHistory(); setInterval(loadHistory, 10 * 60000);
   loadYouTube(); setInterval(loadYouTube, 120000);
   setInterval(tick, 1000);
   setInterval(function () { renderChart(); renderHub(); renderLinks(); }, 60000);
