@@ -435,6 +435,12 @@ export default {
     const path = new URL(req.url).pathname;
     if (path === '/restream/status') return restreamStatus(req, env, ctx);
     if (path === '/youtube/status') return youtubeRoute(req, env, ctx);
+    if (path === '/youtube/test') {
+      // One 1-unit call to confirm the key works: reads the channel's public name.
+      if (!env.YOUTUBE_API_KEY) return Response.json({ configured: false });
+      try { const j = await ytGet(env, 'channels?part=snippet&id=' + YT_CHANNEL); return Response.json({ configured: true, ok: true, channel: j.items && j.items[0] && j.items[0].snippet.title }); }
+      catch (e) { return Response.json({ configured: true, ok: false, error: String(e.message || e) }); }
+    }
     if (path.startsWith('/restream/')) {
       try { return await restreamRoute(req, env, path); }
       catch (e) { return html('<h2>Error</h2><pre>' + esc(e.message || e) + '</pre>', 502); }
