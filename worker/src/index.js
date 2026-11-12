@@ -282,7 +282,7 @@ async function youtubeStatus(env, ts) {
   if (!env.YOUTUBE_API_KEY) return { configured: false };
   const now = denverClock(ts), t = Math.floor(ts / 1000);
   const inWindow = YT_WINDOWS.some(([d, a, b]) => d === now.day && now.min >= a && now.min < b);
-  if (!inWindow) { await env.STATE.delete('yt_live'); return { configured: true, inWindow: false, live: false }; }
+  if (!inWindow) { if (await env.STATE.get('yt_live')) await env.STATE.delete('yt_live'); return { configured: true, inWindow: false, live: false }; } // KV deletes count as writes (1,000 a day on the free plan), so only when needed
   const saved = JSON.parse(await env.STATE.get('yt_live') || 'null');
   if (saved && saved.id) {
     const j = await ytGet(env, 'videos?part=snippet,liveStreamingDetails&id=' + saved.id);
@@ -565,7 +565,8 @@ export default {
     if (env.STATE) jobs.push(trackService(env, event.scheduledTime || Date.now()));
     if (env.STATE) jobs.push(writeHistory(env, event.scheduledTime || Date.now()));
     if (min % 5 === 0) jobs.push(checkHeartbeat(false).then(
-      r => env.STATE && env.STATE.put('hb_last', JSON.stringify({ at: new Date().toISOString(), ok: true, action: r.action })),
+      // Record the result hourly, or whenever it acted (saves KV writes: the free plan allows 1,000 a day).
+      r => env.STATE && (min === 0 || r.action !== 'none') && env.STATE.put('hb_last', JSON.stringify({ at: new Date().toISOString(), ok: true, action: r.action })),
       e => env.STATE && env.STATE.put('hb_last', JSON.stringify({ at: new Date().toISOString(), ok: false, error: String(e && e.message || e) }))));
     ctx.waitUntil(Promise.allSettled(jobs));
   },
