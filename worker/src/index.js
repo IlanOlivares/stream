@@ -246,6 +246,67 @@ async function restreamStatus(req, env, ctx) {
   return res;
 }
 
+// ---------- YouTube: is the English channel actually live? (needs the YOUTUBE_API_KEY secret) ----------
+// Only asks YouTube during service windows. One search (100 quota units, at most every 5 min) finds the live
+// video; after that a 1-unit lookup confirms it is still live. Daily quota is 10,000 units.
+const YT_CHANNEL = 'UCOVPztRFN8bXFYhak1j7KkQ';
+const YT_WINDOWS = [[0, 530, 625], [0, 635, 730], [0, 740, 840], [3, 1100, 1200], [6, 1010, 1110]];
+async function ytGet(env, path) {
+  const r = await fetch('https://www.googleapis.com/youtube/v3/' + path + '&key=' + env.YOUTUBE_API_KEY, { signal: AbortSignal.timeout(8000) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error('YouTube API ' + r.status + ' ' + ((j.error && j.error.message) || '').slice(0, 120));
+  return j;
+}
+async function youtubeStatus(env, ts) {
+  if (!env.YOUTUBE_API_KEY) return { configured: false };
+  const now = denverClock(ts), t = Math.floor(ts / 1000);
+  const inWindow = YT_WINDOWS.some(([d, a, b]) => d === now.day && now.min >= a && now.min < b);
+  if (!inWindow) { await env.STATE.delete('yt_live'); return { configured: true, inWindow: false, live: false }; }
+  const saved = JSON.parse(await env.STATE.get('yt_live') || 'null');
+  if (saved && saved.id) {
+    const j = await ytGet(env, 'videos?part=snippet,liveStreamingDetails&id=' + saved.id);
+    const v = (j.items || [])[0];
+    if (v && v.snippet.liveBroadcastContent === 'live') return { configured: true, inWindow: true, live: true, id: saved.id, title: v.snippet.title, since: v.liveStreamingDetails && v.liveStreamingDetails.actualStartTime };
+    await env.STATE.delete('yt_live');
+  }
+  const last = Number(await env.STATE.get('yt_search_at') || 0);
+  if (t - last < 300) return { configured: true, inWindow: true, live: false, nextSearch: last + 300 };
+  await env.STATE.put('yt_search_at', String(t), { expirationTtl: 3600 });
+  const j = await ytGet(env, 'search?part=snippet&channelId=' + YT_CHANNEL + '&eventType=live&type=video&maxResults=1');
+  const hit = (j.items || [])[0];
+  if (!hit) return { configured: true, inWindow: true, live: false };
+  await env.STATE.put('yt_live', JSON.stringify({ id: hit.id.videoId, at: t }), { expirationTtl: 6 * 3600 });
+  return { configured: true, inWindow: true, live: true, id: hit.id.videoId, title: hit.snippet.title };
+}
+async function youtubeRoute(req, env, ctx) {
+  const cors = { 'access-control-allow-origin': '*', 'content-type': 'application/json', 'cache-control': 'public, max-age=120' };
+  const cache = caches.default, key = new Request(new URL('/youtube/status', req.url).toString());
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  let body;
+  try { body = { t: Math.floor(Date.now() / 1000), ok: true, ...(await youtubeStatus(env, Date.now())) }; }
+  catch (e) { body = { t: Math.floor(Date.now() / 1000), ok: false, error: String(e.message || e).slice(0, 200) }; }
+  const res = new Response(JSON.stringify(body), { headers: cors });
+  ctx.waitUntil(cache.put(key, res.clone()));
+  return res;
+}
+// Two minutes after each Live Check: alert if YouTube still isn't showing the stream.
+const YT_CHECKS = [
+  { day: 0, min: 9 * 60 + 2, label: 'Sun 9:00' }, { day: 0, min: 10 * 60 + 42, label: 'Sun 10:45' },
+  { day: 0, min: 12 * 60 + 27, label: 'Sun 12:30' }, { day: 3, min: 18 * 60 + 32, label: 'Wed 6:30' },
+];
+async function checkYouTube(env, ts) {
+  const now = denverClock(ts);
+  const c = YT_CHECKS.find(x => x.day === now.day && x.min === now.min);
+  if (!c || !env.YOUTUBE_API_KEY) return 'nothing due';
+  await env.STATE.delete('yt_search_at'); // allow a fresh search right now
+  let st;
+  try { st = await youtubeStatus(env, ts); } catch (e) { await notify(`⚠️ ${c.label}: couldn't check YouTube (${String(e.message || e).slice(0, 80)}). Streaming is not affected.`, 'youtube,warning'); return 'error'; }
+  if (st.live) return 'live';
+  await notify(`⚠️ ${c.label}: YouTube isn't showing the stream yet. The encoders may be fine; check Restream's YouTube destination and the channel's live page.`, 'youtube,warning');
+  return 'alerted';
+}
+
 // ---------- Restream destination checks (alerts only when something is wrong) ----------
 // Times are Mountain. "on" = these must be on; "off" = these must be off.
 const YT = c => /youtube/i.test(c.platform);
@@ -362,6 +423,7 @@ export default {
     const jobs = [];
     if (env.STATE && env.RESTREAM_CLIENT_ID) jobs.push(refreshIfNeeded(env).then(() => checkDestinations(env, event.scheduledTime || Date.now())));
     jobs.push(checkRestartReminder(event.scheduledTime || Date.now()));
+    if (env.STATE) jobs.push(checkYouTube(env, event.scheduledTime || Date.now()));
     if (min % 5 === 0) jobs.push(checkHeartbeat(false).then(
       r => env.STATE && env.STATE.put('hb_last', JSON.stringify({ at: new Date().toISOString(), ok: true, action: r.action })),
       e => env.STATE && env.STATE.put('hb_last', JSON.stringify({ at: new Date().toISOString(), ok: false, error: String(e && e.message || e) }))));
@@ -372,6 +434,7 @@ export default {
     NTFY_AUTH = env.NTFY_TOKEN || null;
     const path = new URL(req.url).pathname;
     if (path === '/restream/status') return restreamStatus(req, env, ctx);
+    if (path === '/youtube/status') return youtubeRoute(req, env, ctx);
     if (path.startsWith('/restream/')) {
       try { return await restreamRoute(req, env, path); }
       catch (e) { return html('<h2>Error</h2><pre>' + esc(e.message || e) + '</pre>', 502); }

@@ -301,6 +301,7 @@
   var STATUS_TOPIC = 'abundant-status-m4p8w2';
   var ALERT_TOPIC = 'abundant-stream-k7x2q9';
   var RESTREAM_URL = 'https://abundant-stream.proud-base-a9ba.workers.dev/restream/status';
+  var YOUTUBE_URL = 'https://abundant-stream.proud-base-a9ba.workers.dev/youtube/status';
   var NTFY = 'https://ntfy.sh/';
   var TZ = 'America/Denver';
 
@@ -339,7 +340,7 @@
       [hm(18,30), 'Replay ends', 'Turn Restream destinations off afterward']] }
   ];
 
-  var feedDown = false, lastStatus = null, lastStatusTime = 0, alerts = [], prep = null, rs = null, rsTime = 0;
+  var yt = null, feedDown = false, lastStatus = null, lastStatusTime = 0, alerts = [], prep = null, rs = null, rsTime = 0;
 
   function $(id) { return document.getElementById(id); }
   function text(id, v) { $(id).textContent = v; }
@@ -490,6 +491,11 @@
       d.querySelector('.state').textContent = c.enabled ? 'On' : 'Off';
       d.querySelector('.sub').textContent = custom ? 'Custom RTMP' : c.name;
       d.dataset.on = c.enabled ? '1' : '';
+      // YouTube: say whether the channel is actually live (worker asks YouTube during service windows)
+      if (/youtube/i.test(c.platform) && yt && yt.ok && yt.configured && yt.inWindow) {
+        if (yt.live) { d.className = 'node dest on'; d.querySelector('.state').textContent = 'Live'; d.querySelector('.sub').textContent = 'Live on YouTube now'; }
+        else if (live && !stale && c.enabled) { d.className = 'node dest bad'; d.querySelector('.state').textContent = 'Not live'; d.querySelector('.sub').textContent = 'YouTube isn\'t showing the stream yet'; }
+      }
       box.appendChild(d);
     });
     var offs = rs.channels.filter(function (c) { return !c.enabled; }).map(function (c) { return /custom/i.test(c.platform) ? c.name : c.platform.replace(/^Youtube$/, 'YouTube'); });
@@ -741,6 +747,10 @@
         if (missing.length) problems.push(missing.join(', ') + (missing.length > 1 ? ' are' : ' is') + ' off in Restream. ' + (m < a.s.start - 10 ? 'Turn ' + (missing.length > 1 ? 'them' : 'it') + ' on before Go Live' : 'Viewers there can\'t see the stream'));
       }
     }
+    if (live && !stale && yt && yt.ok && yt.configured && yt.inWindow && !yt.live && rs && rs.ok) {
+      var ytSel = rs.channels.some(function (c) { return /youtube/i.test(c.platform) && c.enabled; });
+      if (ytSel && a.current && m >= a.s.start + 2) problems.push('YouTube isn\'t showing the stream. Check Restream\'s YouTube destination');
+    }
     var ul = $('v-list'); ul.replaceChildren();
     if (problems.length) {
       v.className = 'verdict warn';
@@ -759,6 +769,8 @@
   load(STATUS_TOPIC, handleStatus);
   load(ALERT_TOPIC, handleAlert);
   loadRestream(); setInterval(loadRestream, 60000);
+  function loadYouTube() { fetch(YOUTUBE_URL).then(function (r) { return r.json(); }).then(function (j) { yt = j; renderRestream(); }).catch(function () {}); }
+  loadYouTube(); setInterval(loadYouTube, 120000);
   setInterval(tick, 1000);
   setInterval(function () { renderChart(); renderHub(); renderLinks(); }, 60000);
   setInterval(loadPrep, 10 * 60000);
