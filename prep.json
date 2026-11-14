@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-14T09:45:00-07:00",
+  "updated": "2026-11-14T09:50:00-07:00",
   "channel_links": {
     "YouTube live": "https://www.youtube.com/channel/UCOVPztRFN8bXFYhak1j7KkQ/live",
     "Facebook": "https://facebook.com/AbundantChurchEP",
@@ -9,8 +9,8 @@
   "services": [
     {"date":"2026-11-11","service":"Wed 6:30pm","key":"wed","title":"Get Over It: Part 2","outline":"https://notes.subsplash.com/fill-in/view?page=HST4lUwLQz","spanish":"https://youtube.com/live/7aWgnf2SusU","subsplash":"Done","links":"Done","restream":"Done","status":"Ready"},
     {"date":"2026-11-14","service":"Sat 5:00pm replay","key":"sat","title":"Get Over It: Part 2","outline":"https://notes.subsplash.com/fill-in/view?page=HST4lUwLQz","spanish":"https://youtube.com/live/7aWgnf2SusU","subsplash":"Done","links":"Done","restream":"Done","status":"Ready"},
-    {"date":"2026-11-15","service":"Sun 9:00am","key":"sun9","title":"I Will Restore: Part 2","outline":"https://notes.subsplash.com/fill-in/view?page=V-4SoBAtbl","spanish":"https://youtube.com/live/CCn9z2OdIgM","subsplash":"Done","links":"After Sat replay","restream":"Done","status":"Links pending"},
-    {"date":"2026-11-15","service":"Sun 10:45am","key":"sun1045","title":"I Will Restore: Part 2","outline":"https://notes.subsplash.com/fill-in/view?page=V-4SoBAtbl","spanish":"https://youtube.com/live/CCn9z2OdIgM","subsplash":"Done","links":"After Sat replay","restream":"Done","status":"Links pending"},
-    {"date":"2026-11-15","service":"Sun 12:30pm","key":"sun1230","title":"I Will Restore: Part 2","outline":"https://notes.subsplash.com/fill-in/view?page=V-4SoBAtbl","spanish":"https://youtube.com/live/CCn9z2OdIgM","subsplash":"Done","links":"After Sat replay","restream":"Done","status":"Links pending"}
+    {"date":"2026-11-15","service":"Sun 9:00am","key":"sun9","title":"I Will Restore: Part 2","outline":"https://notes.subsplash.com/fill-in/view?page=V-4SoBAtbl","spanish":"https://youtube.com/live/CCn9z2OdIgM","subsplash":"Done","links":"Done","restream":"Done","status":"Ready"},
+    {"date":"2026-11-15","service":"Sun 10:45am","key":"sun1045","title":"I Will Restore: Part 2","outline":"https://notes.subsplash.com/fill-in/view?page=V-4SoBAtbl","spanish":"https://youtube.com/live/CCn9z2OdIgM","subsplash":"Done","links":"Done","restream":"Done","status":"Ready"},
+    {"date":"2026-11-15","service":"Sun 12:30pm","key":"sun1230","title":"I Will Restore: Part 2","outline":"https://notes.subsplash.com/fill-in/view?page=V-4SoBAtbl","spanish":"https://youtube.com/live/CCn9z2OdIgM","subsplash":"Done","links":"Done","restream":"Done","status":"Ready"}
   ]
 }
