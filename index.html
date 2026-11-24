@@ -337,7 +337,7 @@
       [hm(14,0), 'End', 'Fade to still, stop streaming and recording'],
       [hm(14,5), 'Wrap-up', 'Confirm everything stopped'],
       [hm(14,10), 'Destinations off', 'The cloud worker turns all Restream destinations off']] },
-    { day: 3, start: hm(18,30), end: hm(20,0), label: 'Wednesday 6:30 pm', key: 'wed', spanish: true, steps: [
+    { day: 3, start: hm(18,30), end: hm(20,0), label: 'Wednesday 6:30 pm', key: 'wed', spanish: true, skip: ['2026-11-25'], steps: [
       [hm(18,0), 'Health check', 'Encoders connected, Restream destinations on, disk space'],
       [hm(18,20), 'Go live', 'ATEM streams, OBS records; OBS backup streams a minute later'],
       [hm(18,22), 'Spanish go live', 'Reload the Restream pull, Spanish stream starts at 6:25'],
@@ -345,11 +345,26 @@
       [hm(20,0), 'End', 'Fade to still, stop everything'],
       [hm(20,5), 'Wrap-up', 'Confirm everything stopped'],
       [hm(20,10), 'Destinations off', 'The cloud worker turns all Restream destinations off']] },
-    { day: 6, start: hm(17,0), end: hm(18,30), label: 'Saturday 5:00 pm replay', key: 'sat', spanish: false, replay: true, steps: [
+    { day: 6, start: hm(17,0), end: hm(18,30), label: 'Saturday 5:00 pm replay', key: 'sat', spanish: false, replay: true, skip: ['2026-11-28'], steps: [
       [hm(16,50), 'Replay starts', 'Restream plays Wednesday\'s recording'],
       [hm(17,0), 'Service time', 'Replay is on air'],
-      [hm(18,30), 'Replay ends', 'Turn Restream destinations off afterward']] }
+      [hm(18,30), 'Replay ends', 'Turn Restream destinations off afterward']] },
+    // One-off: Thanksgiving week (no Wednesday service; Thursday morning service, replayed Saturday)
+    { day: 4, start: hm(9,0), end: hm(11,0), label: 'Thanksgiving Thursday 9:00 am', key: 'thu', spanish: true, only: '2026-11-26', steps: [
+      [hm(8,30), 'Health check', 'Encoders connected, Restream destinations on, disk space'],
+      [hm(8,50), 'Go live', 'ATEM streams, OBS records; OBS backup streams a minute later'],
+      [hm(8,52), 'Spanish go live', 'Reload the Restream pull, Spanish stream starts at 8:55'],
+      [hm(9,0), 'Live check', 'Everything streaming and recording'],
+      [hm(11,0), 'End', 'Fade to still, stop everything'],
+      [hm(11,5), 'Wrap-up', 'Confirm everything stopped'],
+      [hm(11,10), 'Destinations off', 'The cloud worker turns all Restream destinations off']] },
+    { day: 6, start: hm(17,0), end: hm(19,0), label: 'Saturday 5:00 pm replay', key: 'sat', spanish: false, replay: true, only: '2026-11-28', steps: [
+      [hm(16,50), 'Replay starts', 'Restream plays Thursday\'s recording (about 2 h 10 min)'],
+      [hm(17,0), 'Service time', 'Replay is on air'],
+      [hm(19,0), 'Replay ends', 'Turn Restream destinations off afterward']] }
   ];
+  // Does service s happen daysAway days from today? Dated entries only on their date; weekly ones unless skipped.
+  function occurs(s, daysAway) { var d = denverDateStr(daysAway); return s.only ? s.only === d : !(s.skip || []).includes(d); }
 
   var yt = null, feedDown = false, lastStatus = null, lastStatusTime = 0, alerts = [], prep = null, rs = null, rsTime = 0;
 
@@ -372,7 +387,7 @@
 
   function activeService() {
     var n = nowDenver(), m = n.sec / 60;
-    var cur = SERVICES.find(function (s) { return s.day === n.day && m >= s.steps[0][0] - 30 && m < s.end + 30; });
+    var cur = SERVICES.find(function (s) { return s.day === n.day && m >= s.steps[0][0] - 30 && m < s.end + 30 && occurs(s, 0); });
     if (cur) return { s: cur, daysAway: 0, current: true };
     return nextAfter(null);
   }
@@ -380,15 +395,19 @@
     var n = nowDenver(), m = n.sec / 60, best = null;
     SERVICES.forEach(function (s) {
       if (s === skip) return;
-      var d = (s.day - n.day + 7) % 7, diff = d * 1440 + s.start - m;
-      if (diff <= 0) { diff += 7 * 1440; d += 7; }
-      if (!best || diff < best.diff) best = { s: s, diff: diff, daysAway: d };
+      var d0 = (s.day - n.day + 7) % 7;
+      for (var k = 0; k < 6; k++) {
+        var d = d0 + 7 * k, diff = d * 1440 + s.start - m;
+        if (diff <= 0 || !occurs(s, d)) continue;
+        if (!best || diff < best.diff) best = { s: s, diff: diff, daysAway: d };
+        break;
+      }
     });
     return { s: best.s, daysAway: best.daysAway, current: false, diffMin: best.diff };
   }
   function inServiceWindow() {
     var n = nowDenver(), m = n.sec / 60;
-    return SERVICES.find(function (s) { return s.day === n.day && m >= s.start - 10 && m < s.end + 5; }) || null;
+    return SERVICES.find(function (s) { return s.day === n.day && m >= s.start - 10 && m < s.end + 5 && occurs(s, 0); }) || null;
   }
   function prepFor(s, daysAway) {
     if (!prep) return null;
@@ -474,7 +493,7 @@
       else {
         // Same rule as the worker's restart reminders: before a service day, restart if up 24 h or more.
         var nd = nowDenver(), nm = nd.sec / 60;
-        var due = cnow >= 86400 && !live && !inServiceWindow() && ((nd.day === 3 && nm >= 540 && nm < 1200) || (nd.day === 6 && nm >= 1260) || (nd.day === 0 && nm < 840));
+        var due = cnow >= 86400 && !live && !inServiceWindow() && ((nd.day === 3 && nm >= 540 && nm < 1200 && denverDateStr(0) !== '2026-11-25') || (denverDateStr(0) === '2026-11-25' && nm >= 1260) || (denverDateStr(0) === '2026-11-26' && nm < 660) || (nd.day === 6 && nm >= 1260) || (nd.day === 0 && nm < 840));
         setTile('t-mac', due ? 'bad' : 'on', due ? 'Restart due' : days(cnow) + ' ago',
           'Last restart ' + since(now - cnow) + (due ? '. Restart before the next service: Apple menu → Restart' : ''));
       }

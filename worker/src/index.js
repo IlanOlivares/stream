@@ -251,14 +251,19 @@ async function restreamStatus(req, env, ctx) {
 // ---------- Services (Mountain time, minutes after midnight) and dates with no service ----------
 // SKIP_DATES: days the usual service doesn't happen (holidays). Every cloud check skips them.
 const SKIP_DATES = ['2026-11-25']; // no Wednesday service Thanksgiving week (Thursday morning service instead)
+// One-off services: entries with `only: 'YYYY-MM-DD'` apply on that date alone (they ignore SKIP_DATES).
+const THANKSGIVING = '2026-11-26';
 const SERVICES = [
   { day: 0, start: 540, end: 625, label: 'Sun 9:00', key: 'sun9', spanish: true },
   { day: 0, start: 645, end: 730, label: 'Sun 10:45', key: 'sun1045' },
   { day: 0, start: 750, end: 840, label: 'Sun 12:30', key: 'sun1230' },
   { day: 3, start: 1110, end: 1200, label: 'Wed 6:30', key: 'wed', spanish: true },
+  { day: 4, start: 540, end: 660, label: 'Thu 9:00', key: 'thu', spanish: true, only: THANKSGIVING },
 ];
 function denverDate(ts) { return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ts)); }
 function skipped(ts) { return SKIP_DATES.includes(denverDate(ts)); }
+// True when a schedule entry applies on this date: weekly entries unless the date is skipped; dated entries only on their date.
+function applies(x, ts) { return x.only ? x.only === denverDate(ts) : !skipped(ts); }
 async function statusSeries(since) {
   const out = [];
   for (const m of await poll(STATUS_TOPIC, since)) { try { out.push({ time: m.time, j: JSON.parse(m.message) }); } catch {} }
@@ -271,7 +276,7 @@ const obsOn = j => !!j.obs_stream && j.obs_stream !== 'Off-Air';
 // Only asks YouTube during service windows. One search (100 quota units, at most every 5 min) finds the live
 // video; after that a 1-unit lookup confirms it is still live. Daily quota is 10,000 units.
 const YT_CHANNEL = 'UCOVPztRFN8bXFYhak1j7KkQ';
-const YT_WINDOWS = [[0, 530, 625], [0, 635, 730], [0, 740, 840], [3, 1100, 1200], [6, 1010, 1110]];
+const YT_WINDOWS = [[0, 530, 625], [0, 635, 730], [0, 740, 840], [3, 1100, 1200], [6, 1010, 1110], [4, 530, 660, THANKSGIVING], [6, 1010, 1145, '2026-11-28']]; // Nov 28 replays Thursday's longer service
 async function ytGet(env, path) {
   const r = await fetch('https://www.googleapis.com/youtube/v3/' + path + '&key=' + env.YOUTUBE_API_KEY, { signal: AbortSignal.timeout(8000) });
   const j = await r.json().catch(() => ({}));
@@ -281,7 +286,7 @@ async function ytGet(env, path) {
 async function youtubeStatus(env, ts, force) {
   if (!env.YOUTUBE_API_KEY) return { configured: false };
   const now = denverClock(ts), t = Math.floor(ts / 1000);
-  const inWindow = YT_WINDOWS.some(([d, a, b]) => d === now.day && now.min >= a && now.min < b);
+  const inWindow = YT_WINDOWS.some(([d, a, b, only]) => d === now.day && now.min >= a && now.min < b && (!only || only === denverDate(ts)));
   if (!inWindow) { if (await env.STATE.get('yt_live')) await env.STATE.delete('yt_live'); return { configured: true, inWindow: false, live: false }; } // KV deletes count as writes (1,000 a day on the free plan), so only when needed
   const saved = JSON.parse(await env.STATE.get('yt_live') || 'null');
   if (saved && saved.id) {
@@ -303,8 +308,8 @@ async function youtubeStatus(env, ts, force) {
 // video says whether it's live (no search needed).
 async function spanishStatus(env, ts) {
   if (!env.YOUTUBE_API_KEY) return { configured: false };
-  const now = denverClock(ts), svc = SERVICES.find(x => x.spanish && x.day === now.day && now.min >= x.start - 10 && now.min < x.end);
-  if (!svc || skipped(ts)) return { configured: true, inWindow: false, live: false };
+  const now = denverClock(ts), svc = SERVICES.find(x => x.spanish && x.day === now.day && now.min >= x.start - 10 && now.min < x.end && applies(x, ts));
+  if (!svc) return { configured: true, inWindow: false, live: false };
   const prep = await fetch('https://ilanolivares.github.io/stream/prep.json?t=' + Date.now(), { signal: AbortSignal.timeout(6000) }).then(r => r.json()).catch(() => null);
   const row = prep && (prep.services || []).find(x => x.key === svc.key && x.date === denverDate(ts));
   const m = row && row.spanish && String(row.spanish).match(/(?:live\/|v=|youtu\.be\/)([\w-]{11})/);
@@ -329,11 +334,12 @@ async function youtubeRoute(req, env, ctx) {
 const YT_CHECKS = [
   { day: 0, min: 9 * 60 + 2, label: 'Sun 9:00' }, { day: 0, min: 10 * 60 + 42, label: 'Sun 10:45' },
   { day: 0, min: 12 * 60 + 27, label: 'Sun 12:30' }, { day: 3, min: 18 * 60 + 32, label: 'Wed 6:30' },
+  { day: 4, min: 9 * 60 + 2, label: 'Thu 9:00', only: THANKSGIVING },
 ];
 async function checkYouTube(env, ts) {
   const now = denverClock(ts);
-  const c = YT_CHECKS.find(x => x.day === now.day && x.min === now.min);
-  if (!c || !env.YOUTUBE_API_KEY || skipped(ts)) return 'nothing due';
+  const c = YT_CHECKS.find(x => x.day === now.day && x.min === now.min && applies(x, ts));
+  if (!c || !env.YOUTUBE_API_KEY) return 'nothing due';
   const svc = SERVICES.find(x => x.label === c.label);
   if (svc && svc.spanish) {
     const es = await spanishStatus(env, ts).catch(() => null);
@@ -367,6 +373,10 @@ const DEST_CHECKS = [
   { day: 0, min: 14 * 60 + 10, until: 14 * 60 + 20, label: 'Sunday', off: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM }, remove: 'all' },
   { day: 3, min: 18 * 60 + 30, label: 'Wed 6:30', on: { YouTube: YT, Facebook: FB, Subsplash: SUB } },
   { day: 3, min: 20 * 60 + 10, until: 20 * 60 + 20, label: 'Wednesday', off: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM }, remove: 'all' },
+  // Thanksgiving Thursday 9:00-11:00 (one-off): no KTSM.
+  { day: 4, min: 8 * 60 + 30, label: 'Thu 9:00', pre: '8:50', on: { YouTube: YT, Facebook: FB, Subsplash: SUB }, only: THANKSGIVING },
+  { day: 4, min: 9 * 60, label: 'Thu 9:00', on: { YouTube: YT, Facebook: FB, Subsplash: SUB }, only: THANKSGIVING },
+  { day: 4, min: 11 * 60 + 10, until: 11 * 60 + 20, label: 'Thanksgiving service', off: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM }, remove: 'all', only: THANKSGIVING },
 ];
 function denverClock(ts) {
   const p = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(new Date(ts));
@@ -406,8 +416,8 @@ async function removeDestinations(env, check) {
 }
 async function checkDestinations(env, ts) {
   const now = denverClock(ts);
-  const check = DEST_CHECKS.find(c => c.day === now.day && now.min >= c.min && now.min <= (c.until || c.min));
-  if (!check || skipped(ts) || !(await env.STATE.get('restream_tokens'))) return 'nothing due';
+  const check = DEST_CHECKS.find(c => c.day === now.day && now.min >= c.min && now.min <= (c.until || c.min) && applies(c, ts));
+  if (!check || !(await env.STATE.get('restream_tokens'))) return 'nothing due';
   let problems = destProblems(check, await readChannels(env));
   let extra = '';
   if (!problems.length) return 'ok';
@@ -437,8 +447,8 @@ async function checkDestinations(env, ts) {
 // (b) the church Mac has sent nothing for 5+ minutes during a service. ntfy allows 3 calls a day on this plan.
 async function checkEmergency(env, ts) {
   const now = denverClock(ts), t = ts / 1000;
-  const svc = SERVICES.find(x => x.day === now.day && now.min >= x.start - 10 + 3 && now.min < x.end);
-  if (!svc || skipped(ts)) return 'not in a service';
+  const svc = SERVICES.find(x => x.day === now.day && now.min >= x.start - 10 + 3 && now.min < x.end && applies(x, ts));
+  if (!svc) return 'not in a service';
   const series = await statusSeries('20m');
   const last = series[series.length - 1];
   let kind = null, msg = '';
@@ -467,8 +477,8 @@ async function checkEmergency(env, ts) {
 // writes a summary from Companion's minute-by-minute status reports.
 async function trackService(env, ts) {
   const now = denverClock(ts);
-  const svc = SERVICES.find(x => x.day === now.day && now.min >= x.start && now.min < x.end);
-  if (!svc || skipped(ts) || now.min % 5 || !env.YOUTUBE_API_KEY) return 'nothing due';
+  const svc = SERVICES.find(x => x.day === now.day && now.min >= x.start && now.min < x.end && applies(x, ts));
+  if (!svc || now.min % 5 || !env.YOUTUBE_API_KEY) return 'nothing due';
   const yt = await youtubeStatus(env, ts).catch(() => null);
   const key = 'svc_' + denverDate(ts) + '_' + svc.key;
   const cur = JSON.parse(await env.STATE.get(key) || '{}');
@@ -478,8 +488,8 @@ async function trackService(env, ts) {
 }
 async function writeHistory(env, ts) {
   const now = denverClock(ts);
-  const svc = SERVICES.find(x => x.day === now.day && now.min === x.end + 10);
-  if (!svc || skipped(ts)) return 'nothing due';
+  const svc = SERVICES.find(x => x.day === now.day && now.min === x.end + 10 && applies(x, ts));
+  if (!svc) return 'nothing due';
   const date = denverDate(ts), dayStart = ts / 1000 - now.min * 60;
   const from = dayStart + (svc.start - 10) * 60, to = dayStart + svc.end * 60;
   const rows = (await statusSeries('3h')).filter(x => x.time >= from && x.time <= to && x.j.live === '1');
@@ -503,6 +513,7 @@ async function writeHistory(env, ts) {
 const RESTART_REMINDERS = [
   { day: 3, min: 9 * 60, msg: "🔄 Restart the church Mac before tonight's 6:30 service (it hasn't restarted in {up}). Apple menu → Restart, with \"Reopen windows\" unchecked." },
   { day: 6, min: 21 * 60, msg: "🔄 Restart the church Mac before Sunday's services (it hasn't restarted in {up}). Apple menu → Restart, with \"Reopen windows\" unchecked." },
+  { day: 3, min: 21 * 60, only: '2026-11-25', msg: "🔄 Restart the church Mac before Thursday's 9:00 Thanksgiving service (it hasn't restarted in {up}). Apple menu → Restart, with \"Reopen windows\" unchecked." },
 ];
 function upText(sec) { const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600); return d ? `${d} day${d > 1 ? 's' : ''}${h ? ' ' + h + ' h' : ''}` : `${h} h`; }
 async function macUptime(ts) {
@@ -514,8 +525,8 @@ async function macUptime(ts) {
 }
 async function checkRestartReminder(ts) {
   const now = denverClock(ts);
-  const r = RESTART_REMINDERS.find(x => x.day === now.day && x.min === now.min);
-  if (!r || skipped(ts)) return 'nothing due';
+  const r = RESTART_REMINDERS.find(x => x.day === now.day && x.min === now.min && applies(x, ts));
+  if (!r) return 'nothing due';
   const up = await macUptime(ts);
   if (up === null || up < 24 * 3600) return 'ok';
   await notify(r.msg.replace('{up}', upText(up)), 'arrows_counterclockwise,restart');
