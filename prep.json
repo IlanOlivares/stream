@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-27T21:50:00-07:00",
+  "updated": "2026-11-27T22:30:00-07:00",
   "channel_links": {
     "YouTube live": "https://www.youtube.com/channel/UCOVPztRFN8bXFYhak1j7KkQ/live",
     "Facebook": "https://facebook.com/AbundantChurchEP",
@@ -43,6 +43,16 @@
       "date": "2026-11-29",
       "service": "Sun 12:30pm",
       "key": "sun1230",
+      "title": "Waiting for info",
+      "subsplash": "Not set",
+      "links": "Not set",
+      "restream": "Not set",
+      "status": "Needs info"
+    },
+    {
+      "date": "2026-12-04",
+      "service": "Fri 7:00pm (Holidazzle)",
+      "key": "fri",
       "title": "Waiting for info",
       "subsplash": "Not set",
       "links": "Not set",

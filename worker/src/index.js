@@ -253,12 +253,14 @@ async function restreamStatus(req, env, ctx) {
 const SKIP_DATES = ['2026-11-25']; // no Wednesday service Thanksgiving week (Thursday morning service instead)
 // One-off services: entries with `only: 'YYYY-MM-DD'` apply on that date alone (they ignore SKIP_DATES).
 const THANKSGIVING = '2026-11-26';
+const HOLIDAZZLE = '2026-12-04'; // ONE Sisterhood Holidazzle special service, Fri 7:00 pm
 const SERVICES = [
   { day: 0, start: 540, end: 625, label: 'Sun 9:00', key: 'sun9', spanish: true },
   { day: 0, start: 645, end: 730, label: 'Sun 10:45', key: 'sun1045' },
   { day: 0, start: 750, end: 840, label: 'Sun 12:30', key: 'sun1230' },
   { day: 3, start: 1110, end: 1200, label: 'Wed 6:30', key: 'wed', spanish: true },
   { day: 4, start: 540, end: 660, label: 'Thu 9:00', key: 'thu', spanish: true, only: THANKSGIVING },
+  { day: 5, start: 1140, end: 1260, label: 'Fri 7:00', key: 'fri', spanish: true, only: HOLIDAZZLE },
 ];
 function denverDate(ts) { return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ts)); }
 function skipped(ts) { return SKIP_DATES.includes(denverDate(ts)); }
@@ -276,7 +278,7 @@ const obsOn = j => !!j.obs_stream && j.obs_stream !== 'Off-Air';
 // Only asks YouTube during service windows. One search (100 quota units, at most every 5 min) finds the live
 // video; after that a 1-unit lookup confirms it is still live. Daily quota is 10,000 units.
 const YT_CHANNEL = 'UCOVPztRFN8bXFYhak1j7KkQ';
-const YT_WINDOWS = [[0, 530, 625], [0, 635, 730], [0, 740, 840], [3, 1100, 1200], [6, 1010, 1110], [4, 530, 660, THANKSGIVING], [6, 1010, 1145, '2026-11-28']]; // Nov 28 replays Thursday's longer service
+const YT_WINDOWS = [[0, 530, 625], [0, 635, 730], [0, 740, 840], [3, 1100, 1200], [6, 1010, 1110], [4, 530, 660, THANKSGIVING], [6, 1010, 1145, '2026-11-28'], [5, 1130, 1260, HOLIDAZZLE]]; // Nov 28 replays Thursday's longer service
 async function ytGet(env, path) {
   const r = await fetch('https://www.googleapis.com/youtube/v3/' + path + '&key=' + env.YOUTUBE_API_KEY, { signal: AbortSignal.timeout(8000) });
   const j = await r.json().catch(() => ({}));
@@ -335,6 +337,7 @@ const YT_CHECKS = [
   { day: 0, min: 9 * 60 + 2, label: 'Sun 9:00' }, { day: 0, min: 10 * 60 + 42, label: 'Sun 10:45' },
   { day: 0, min: 12 * 60 + 27, label: 'Sun 12:30' }, { day: 3, min: 18 * 60 + 32, label: 'Wed 6:30' },
   { day: 4, min: 9 * 60 + 2, label: 'Thu 9:00', only: THANKSGIVING },
+  { day: 5, min: 19 * 60 + 2, label: 'Fri 7:00', only: HOLIDAZZLE },
 ];
 async function checkYouTube(env, ts) {
   const now = denverClock(ts);
@@ -377,6 +380,10 @@ const DEST_CHECKS = [
   { day: 4, min: 8 * 60 + 30, label: 'Thu 9:00', pre: '8:50', on: { YouTube: YT, Facebook: FB, Subsplash: SUB }, only: THANKSGIVING },
   { day: 4, min: 9 * 60, label: 'Thu 9:00', on: { YouTube: YT, Facebook: FB, Subsplash: SUB }, only: THANKSGIVING },
   { day: 4, min: 11 * 60 + 10, until: 11 * 60 + 20, label: 'Thanksgiving service', off: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM }, remove: 'all', only: THANKSGIVING },
+  // Holidazzle Friday 7:00-9:00 pm (one-off): no KTSM.
+  { day: 5, min: 18 * 60 + 30, label: 'Fri 7:00', pre: '6:50', on: { YouTube: YT, Facebook: FB, Subsplash: SUB }, only: HOLIDAZZLE },
+  { day: 5, min: 19 * 60, label: 'Fri 7:00', on: { YouTube: YT, Facebook: FB, Subsplash: SUB }, only: HOLIDAZZLE },
+  { day: 5, min: 21 * 60 + 10, until: 21 * 60 + 20, label: 'Holidazzle service', off: { YouTube: YT, Facebook: FB, Subsplash: SUB, KTSM }, remove: 'all', only: HOLIDAZZLE },
 ];
 function denverClock(ts) {
   const p = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(new Date(ts));
@@ -514,6 +521,7 @@ const RESTART_REMINDERS = [
   { day: 3, min: 9 * 60, msg: "🔄 Restart the church Mac before tonight's 6:30 service (it hasn't restarted in {up}). Apple menu → Restart, with \"Reopen windows\" unchecked." },
   { day: 6, min: 21 * 60, msg: "🔄 Restart the church Mac before Sunday's services (it hasn't restarted in {up}). Apple menu → Restart, with \"Reopen windows\" unchecked." },
   { day: 3, min: 21 * 60, only: '2026-11-25', msg: "🔄 Restart the church Mac before Thursday's 9:00 Thanksgiving service (it hasn't restarted in {up}). Apple menu → Restart, with \"Reopen windows\" unchecked." },
+  { day: 5, min: 9 * 60, only: HOLIDAZZLE, msg: "🔄 Restart the church Mac before tonight's 7:00 Holidazzle service (it hasn't restarted in {up}). Apple menu → Restart, with \"Reopen windows\" unchecked." },
 ];
 function upText(sec) { const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600); return d ? `${d} day${d > 1 ? 's' : ''}${h ? ' ' + h + ' h' : ''}` : `${h} h`; }
 async function macUptime(ts) {
