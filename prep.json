@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-25T20:40:00-07:00",
+  "updated": "2026-11-27T21:50:00-07:00",
   "channel_links": {
     "YouTube live": "https://www.youtube.com/channel/UCOVPztRFN8bXFYhak1j7KkQ/live",
     "Facebook": "https://facebook.com/AbundantChurchEP",
@@ -8,26 +8,14 @@
   },
   "services": [
     {
-      "date": "2026-11-26",
-      "service": "Thu 9:00am (Thanksgiving)",
-      "key": "thu",
-      "title": "The Essence of Thanksgiving",
-      "subsplash": "Done",
-      "links": "Done",
-      "restream": "Done",
-      "status": "Ready",
-      "outline": "https://notes.subsplash.com/fill-in/view?page=1TpM6u-F5T",
-      "spanish": "https://youtube.com/live/j0WijGjPlFY"
-    },
-    {
       "date": "2026-11-28",
       "service": "Sat 5:00pm replay",
       "key": "sat",
       "title": "The Essence of Thanksgiving",
       "subsplash": "Done",
       "links": "Done",
-      "restream": "Not set",
-      "status": "Needs upload",
+      "restream": "Done",
+      "status": "Ready",
       "outline": "https://notes.subsplash.com/fill-in/view?page=1TpM6u-F5T",
       "spanish": "https://youtube.com/live/j0WijGjPlFY"
     },
